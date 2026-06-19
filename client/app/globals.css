@@ -21,6 +21,9 @@
   --color-text:        #0F172A;
   --color-text-muted:  #475569;
 
+  /* Surfaces */
+  --color-surface-glass: rgba(255,255,255,0.75);
+
   /* Borders */
   --color-border:      rgba(0,0,0,0.08);
   --color-border-glass: rgba(0,0,0,0.1);
@@ -46,38 +49,49 @@
   --z-sidebar:   40;
   --z-palette:   50;
   --z-toast:     60;
+
+  /* Notebook / wiki surface (light) */
+  --nb-sidebar-bg:   rgba(248,250,252,0.92);
+  --nb-row-hover:    rgba(13,148,136,0.08);
+  --nb-row-active:   rgba(13,148,136,0.14);
+  --nb-indent-guide: rgba(15,23,42,0.10);
+  --nb-page-icon:    #64748B;
+  --nb-card-radius:  14px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-primary:     #2DD4BF;
-    --color-primary-fg:  #0B1220;
-    --color-secondary:   #5EEAD4;
-    --color-accent:      #FB923C;
-    --color-accent-fg:   #0B1220;
+/* Dark mode is class-driven only (html.dark). OS preference is applied as the
+   .dark class by the inline theme-init script in layout.tsx, so a @media
+   (prefers-color-scheme) block here would override the manual toggle — omitted. */
+html.dark {
+  --color-primary:     #2DD4BF;
+  --color-primary-fg:  #0B1220;
+  --color-secondary:   #5EEAD4;
+  --color-accent:      #FB923C;
+  --color-accent-fg:   #0B1220;
+  --color-canvas-from: #0B1220;
+  --color-canvas-to:   #0E1726;
+  --color-surface:     rgba(19,28,43,0.72);
+  --color-surface-muted: rgba(14,23,38,0.85);
+  --color-text:        #E6EDF6;
+  --color-text-muted:  #94A3B8;
+  --color-border:      rgba(255,255,255,0.06);
+  --color-border-glass: rgba(255,255,255,0.1);
+  --color-surface-glass: rgba(19,28,43,0.80);
+  --glass-bg-light:    rgba(19,28,43,0.72);
+  --glass-border:      rgba(255,255,255,0.10);
+  --neu-shadow:
+    6px 6px 12px rgba(0,0,0,0.4),
+    -6px -6px 12px rgba(255,255,255,0.04);
+  --neu-shadow-inset:
+    inset 4px 4px 8px rgba(0,0,0,0.4),
+    inset -4px -4px 8px rgba(255,255,255,0.04);
 
-    --color-canvas-from: #0B1220;
-    --color-canvas-to:   #0E1726;
-
-    --color-surface:     rgba(19,28,43,0.72);
-    --color-surface-muted: rgba(14,23,38,0.85);
-
-    --color-text:        #E6EDF6;
-    --color-text-muted:  #94A3B8;
-
-    --color-border:      rgba(255,255,255,0.06);
-    --color-border-glass: rgba(255,255,255,0.1);
-
-    --glass-bg-light:    rgba(19,28,43,0.72);
-    --glass-border:      rgba(255,255,255,0.10);
-
-    --neu-shadow:
-      6px 6px 12px rgba(0,0,0,0.4),
-      -6px -6px 12px rgba(255,255,255,0.04);
-    --neu-shadow-inset:
-      inset 4px 4px 8px rgba(0,0,0,0.4),
-      inset -4px -4px 8px rgba(255,255,255,0.04);
-  }
+  /* Notebook / wiki surface (dark) */
+  --nb-sidebar-bg:   rgba(14,23,38,0.85);
+  --nb-row-hover:    rgba(45,212,191,0.10);
+  --nb-row-active:   rgba(45,212,191,0.18);
+  --nb-indent-guide: rgba(255,255,255,0.10);
+  --nb-page-icon:    #94A3B8;
 }
 
 /* ── Tailwind v4 theme extension ─────────────────────────────────────────── */
@@ -121,6 +135,13 @@ body {
   border: 1px solid var(--glass-border);
 }
 
+.glass-card {
+  background: var(--glass-bg-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
 .neu {
   box-shadow: var(--neu-shadow);
 }
@@ -145,7 +166,39 @@ body {
   }
 }
 
+/* ── Canvas panning perf — suppress blur/transition during interaction ──────── */
+[data-panning] .glass-card,
+[data-panning] .glass {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: none !important;
+}
+
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+/* ── BlockNote overrides ───────────────────────────────────────────────────── */
+/* Kill placeholder highlight background */
+.bn-editor .bn-block-content[data-is-empty-and-focused="true"]::before,
+.bn-editor .bn-block-content[data-placeholder]::before {
+  background: transparent !important;
+  color: var(--color-text-muted) !important;
+}
+/* BlockNote color picker popup */
+.bn-color-picker-dropdown {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--glass-border) !important;
+  backdrop-filter: blur(var(--glass-blur)) !important;
+  border-radius: 10px !important;
+}
+
+/* Remove editor background / border so it blends into the card */
+.bn-editor,
+.bn-container,
+[data-theming-css-variables-demo] {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
