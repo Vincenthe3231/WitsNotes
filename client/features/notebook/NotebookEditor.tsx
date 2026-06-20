@@ -19,7 +19,7 @@ import { useThemeMode } from "@/hooks/useThemeMode";
 import { uploadAttachment } from "@/lib/api/boards";
 import { useBoard } from "@/lib/api/hooks";
 import { NotebookMention } from "@/features/editor/NotebookMention";
-import { flattenTabsForMention } from "@/lib/notebook/tree";
+import { flattenTabsForMention, generateAnchorId } from "@/lib/notebook/tree";
 import { BookOpen } from "lucide-react";
 import { nestingEnter } from "@/features/notebook/nestingEnter";
 import { sanitizeBlocks } from "@/lib/notebook/sanitizeBlocks";
@@ -28,6 +28,7 @@ const schema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, alert: Alert },
   inlineContentSpecs: { ...defaultInlineContentSpecs, notebookMention: NotebookMention },
 });
+
 
 function CompactSlashMenu(props: SuggestionMenuProps<DefaultReactSuggestionItem>) {
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -99,6 +100,45 @@ function NotebookEditorInner({ tab, boardId, onChange }: Props) {
     changeRef.current(editor.document as Block[]);
   }, [editor]);
 
+  // Update heading and mention block IDs when document changes
+  useEffect(() => {
+    const blocks = editor.document as Block[];
+
+    // Use a MutationObserver to add IDs to headings and mention blocks as they're rendered
+    const observer = new MutationObserver(() => {
+      for (const block of blocks) {
+        if (block.type === "heading") {
+          const content = (block.content as Array<{ text?: string } | null> | null)?.[0]?.text ?? "";
+          if (content) {
+            const anchor = generateAnchorId(block.id, content);
+            // Find the heading element by looking for the text in h1-h3 elements
+            const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
+            for (const heading of headings) {
+              if (heading.textContent === content && !heading.id) {
+                heading.id = anchor;
+                heading.style.scrollMarginTop = "100px";
+              }
+            }
+          }
+        } else {
+          // For blocks with mentions, add IDs to the block container
+          const inlineContent = (block.content as Array<Record<string, unknown>> | null) || [];
+          if (inlineContent.some((c) => c?.type === "notebookMention")) {
+            const blockElements = document.querySelectorAll(`[data-block-id="${block.id}"]`);
+            for (const blockEl of blockElements) {
+              if (!blockEl.id) {
+                blockEl.id = `block-${block.id}`;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [editor.document]);
+
   return (
     <BlockNoteView
       editor={editor}
@@ -162,7 +202,7 @@ function NotebookEditorInner({ tab, boardId, onChange }: Props) {
               onItemClick: () => {
                 editor.insertInlineContent([
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  { type: "notebookMention" as any, props: { boardId: t.boardId, cardId: t.cardId, tabId: t.tabId ?? "", label: t.label } },
+                  { type: "notebookMention" as any, props: { boardId: t.boardId, cardId: t.cardId, tabId: t.tabId ?? "", sectionId: t.sectionId ?? "", label: t.label } },
                   " ",
                 ]);
               },

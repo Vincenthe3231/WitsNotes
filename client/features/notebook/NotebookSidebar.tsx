@@ -1,8 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ChevronRight, FileText, Plus, Trash2, PanelLeftClose } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ChevronRight, FileText, Plus, Trash2, PanelLeftClose, Link2 } from "lucide-react";
 import { NotebookTab } from "@/lib/api/schemas";
+import { type Backlink } from "@/lib/notebook/tree";
 
 interface Props {
   tabs: NotebookTab[];
@@ -16,6 +18,10 @@ interface Props {
   /** Move `fromId` under `toParentId` (null = root) at `index`. */
   onMove: (fromId: string, toParentId: string | null, index: number) => void;
   onCollapseSidebar: () => void;
+  backlinks?: Backlink[];
+  currentCardId?: string;
+  currentTabId?: string;
+  boardId?: string;
 }
 
 const ROW_PAD = 8;
@@ -23,11 +29,41 @@ const INDENT = 14;
 
 export function NotebookSidebar({
   tabs, activeId, title, onSelect, onAdd, onRename, onDelete, onMove, onCollapseSidebar,
+  backlinks,
 }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [showBacklinks, setShowBacklinks] = useState(false);
   const dragId = useRef<string | null>(null);
+
+  function handleSelectTab(id: string) {
+    onSelect(id);
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", id);
+    router.push(`?${params.toString()}`);
+  }
+
+  function handleBacklinkClick(backlink: Backlink) {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", backlink.sourceTabId);
+    router.push(`?${params.toString()}${backlink.sectionId ? `#${backlink.sectionId}` : ""}`);
+    // Scroll to the mention block
+    setTimeout(() => {
+      const element = document.getElementById(`block-${backlink.blockId}`);
+      element?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      // Add a brief highlight
+      if (element) {
+        const originalBg = element.style.backgroundColor;
+        element.style.backgroundColor = "rgba(255,200,0,0.3)";
+        setTimeout(() => {
+          element.style.backgroundColor = originalBg;
+        }, 2000);
+      }
+    }, 100);
+  }
 
   function toggleCollapse(id: string) {
     setCollapsed((prev) => {
@@ -67,7 +103,7 @@ export function NotebookSidebar({
             }
             dragId.current = null;
           }}
-          onClick={() => onSelect(node.id)}
+          onClick={() => handleSelectTab(node.id)}
           onKeyDown={(e) => {
             if (e.key === "Enter") onSelect(node.id);
             if (e.key === "ArrowRight" && hasChildren && isCollapsed) toggleCollapse(node.id);
@@ -174,15 +210,37 @@ export function NotebookSidebar({
     >
       <div className="flex items-center gap-2 px-3" style={{ height: 44, borderBottom: "1px solid var(--glass-border)" }}>
         <span className="flex-1 text-xs font-semibold uppercase tracking-wide truncate" style={{ color: "var(--color-text-muted)" }}>
-          {title ?? "Pages"}
+          {showBacklinks ? "Backlinks" : (title ?? "Pages")}
         </span>
-        <button
-          onClick={() => onAdd(null)}
-          title="New page"
-          style={{ display: "flex", alignItems: "center", padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--color-text-muted)", borderRadius: 6 }}
-        >
-          <Plus size={15} />
-        </button>
+        {!showBacklinks && (
+          <>
+            <button
+              onClick={() => onAdd(null)}
+              title="New page"
+              style={{ display: "flex", alignItems: "center", padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--color-text-muted)", borderRadius: 6 }}
+            >
+              <Plus size={15} />
+            </button>
+            {(backlinks?.length ?? 0) > 0 && (
+              <button
+                onClick={() => setShowBacklinks(true)}
+                title="Show backlinks"
+                style={{ display: "flex", alignItems: "center", padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--color-primary)", borderRadius: 6 }}
+              >
+                <Link2 size={15} />
+              </button>
+            )}
+          </>
+        )}
+        {showBacklinks && (
+          <button
+            onClick={() => setShowBacklinks(false)}
+            title="Back to pages"
+            style={{ display: "flex", alignItems: "center", padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--color-text-muted)", borderRadius: 6 }}
+          >
+            <ChevronRight size={15} />
+          </button>
+        )}
         <button
           onClick={onCollapseSidebar}
           title="Hide sidebar"
@@ -192,19 +250,54 @@ export function NotebookSidebar({
         </button>
       </div>
 
-      <div
-        role="tree"
-        aria-label="Page tree"
-        className="flex-1 overflow-y-auto p-2"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={() => {
-          // Drop into empty tree area → move to root end.
-          if (dragId.current) onMove(dragId.current, null, tabs.length);
-          dragId.current = null;
-        }}
-      >
-        {tabs.map((node) => renderNode(node, 0))}
-      </div>
+      {!showBacklinks ? (
+        <div
+          role="tree"
+          aria-label="Page tree"
+          className="flex-1 overflow-y-auto p-2"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={() => {
+            // Drop into empty tree area → move to root end.
+            if (dragId.current) onMove(dragId.current, null, tabs.length);
+            dragId.current = null;
+          }}
+        >
+          {tabs.map((node) => renderNode(node, 0))}
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-2">
+          {(backlinks?.length ?? 0) === 0 ? (
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", padding: 8 }}>No backlinks yet</p>
+          ) : (
+            backlinks?.map((backlink, idx) => (
+              <div
+                key={idx}
+                onClick={() => handleBacklinkClick(backlink)}
+                style={{
+                  padding: "8px 12px",
+                  marginBottom: 4,
+                  borderRadius: 6,
+                  background: "var(--nb-row-hover)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  color: "var(--color-text)",
+                  userSelect: "none",
+                  transition: "background 150ms",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-primary-alpha, rgba(13,148,136,0.2))"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "var(--nb-row-hover)"; }}
+              >
+                <div style={{ fontWeight: 500, marginBottom: 2 }}>
+                  {backlink.sourceCardTitle ?? "Notebook"} › {backlink.sourceTabTitle}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+                  @ {backlink.mentionLabel}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </aside>
   );
 }

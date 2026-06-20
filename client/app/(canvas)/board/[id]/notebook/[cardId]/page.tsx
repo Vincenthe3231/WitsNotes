@@ -6,7 +6,7 @@ import { ArrowLeft, CheckCircle, Loader2, Lock, Unlock, PanelLeft } from "lucide
 import { useBoard, useUpdateCard } from "@/lib/api/hooks";
 import { NotebookTab } from "@/lib/api/schemas";
 import { NotebookSidebar } from "@/features/notebook/NotebookSidebar";
-import { findNode, firstLeaf, updateNode, insertChild, removeNode, moveNode } from "@/lib/notebook/tree";
+import { findNode, firstLeaf, updateNode, insertChild, removeNode, moveNode, findBacklinks, type Backlink } from "@/lib/notebook/tree";
 import { NotebookEditor } from "@/features/notebook/NotebookEditorDynamic";
 import { Block } from "@blocknote/core";
 import { useNotebookSave } from "@/hooks/useNotebookSave";
@@ -48,6 +48,7 @@ export default function NotebookPage({
   const [tabs, setTabs] = useState<NotebookTab[]>([]);
   const [activeId, setActiveId] = useState<string>(tabParam ?? "");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
 
   // Sync activeId when ?tab= URL param changes without page remount (same-card mention nav)
   useEffect(() => {
@@ -80,6 +81,11 @@ export default function NotebookPage({
         setTabs(tabs);
         setActiveId((id) => id || (tabs[0]?.id ?? ""));
         setUnlocked(true);
+        // Find backlinks to this card
+        if (data?.cards) {
+          const backlinksFound = findBacklinks(data.cards, cardId, undefined);
+          setBacklinks(backlinksFound);
+        }
       }, 0);
     } else {
       const cached = getCachedKey(cardId);
@@ -93,6 +99,11 @@ export default function NotebookPage({
               setUnlocked(true);
               setTabs(t);
               setActiveId(t[0]?.id ?? "");
+              // Find backlinks to this card
+              if (data?.cards) {
+                const backlinksFound = findBacklinks(data.cards, cardId, undefined);
+                setBacklinks(backlinksFound);
+              }
             }, 0);
           });
         } else {
@@ -103,7 +114,7 @@ export default function NotebookPage({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [card?.id, isEncrypted]);
+  }, [card?.id, isEncrypted, data?.cards]);
 
   async function handlePasswordSubmit(password: string): Promise<boolean> {
     const salt = (card?.style as { vault_salt?: string } | null)?.vault_salt ?? "";
@@ -318,6 +329,10 @@ export default function NotebookPage({
             onDelete={deleteTab}
             onMove={handleMove}
             onCollapseSidebar={() => setSidebarOpen(false)}
+            backlinks={backlinks}
+            currentCardId={cardId}
+            currentTabId={activeId}
+            boardId={boardId}
           />
         )}
 
