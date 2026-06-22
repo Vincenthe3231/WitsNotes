@@ -194,10 +194,14 @@ body {
   border-radius: 10px !important;
 }
 
-/* Remove editor background / border so it blends into the card */
+/* Remove editor background / border so it blends into the document background */
 .bn-editor,
 .bn-container,
-[data-theming-css-variables-demo] {
+[data-theming-css-variables-demo],
+.bn-block-outer,
+.bn-block,
+.bn-block-content,
+.ProseMirror {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;

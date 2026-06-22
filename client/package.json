@@ -17,14 +17,17 @@
     "@mantine/utils": "^6.0.22",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-query-devtools": "^5.101.0",
+    "@tanstack/react-query-persist-client": "^5.101.0",
     "@tiptap/core": "^3.27.0",
     "axios": "^1.18.0",
     "cmdk": "^1.1.1",
+    "idb-keyval": "^6.2.5",
     "libsodium-wrappers-sumo": "^0.8.4",
     "lucide-react": "^1.20.0",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "yjs": "^13.6.31",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
@@ -38,6 +41,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "serwist": "^9.5.11",
+    "sharp": "^0.35.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,129 +1,210 @@
-# Fix two BlockNote editor bugs (null-text crash + Alert cursor escape)
+# Phase 2 — Offline-first PWA (detailed plan)
 
 ## Context
 
-The notebook/canvas editor uses BlockNote (`useCreateBlockNote`) with two custom
-schema additions: a custom **Alert** block (`createReactBlockSpec`, `content: "inline"`)
-and a **notebookMention** inline content (`createReactInlineContentSpec`, `content: "none"`).
-Two related defects surface around these custom pieces:
+`PLAN.md` Phase 2 ("Offline-first PWA") is currently a vague bullet list. Only the
+Serwist asset cache is done; reads/writes do **not** survive offline, the PWA is
+**not installable** (manifest references missing icons), and there is no sync feedback.
+This plan turns Phase 2 into an executable spec on the existing `feat/offline-PWA` branch.
 
-1. **Cross-ref origin crash.** Clicking a `notebookMention`, landing on the destination
-   page, then refreshing crashes the origin notebook page with
-   `TypeError: can't access property 'split', e.text is null`. The crash happens during
-   hydration: stored blocks are passed as `initialContent` at
-   `client/features/notebook/NotebookEditor.tsx:132`, and BlockNote's `blockToNode`
-   (`ckToNode.ts`) calls `text.split(...)` on an inline text node whose `text` is `null`.
-   The existing `EditorBoundary` catches it but recovers by mounting an **empty** doc —
-   so the page survives but the user's content disappears until they edit.
+**Codegraph findings that shape the design:**
+- **Proxy auth is the offline pivot.** `apiClient` (axios, `client/lib/api/client.ts`)
+  calls `/api/proxy/[...path]` — a Next **server** route handler
+  (`client/app/api/proxy/[...path]/route.ts`) that reads the httpOnly `wn_sid` cookie
+  and forwards a Bearer token to Laravel. JS never sees the token; the browser
+  auto-attaches the cookie on replay. ⇒ Offline **reads must come from client-side
+  IndexedDB (react-query persistence)**, not the route handler (which is unreachable offline).
+- `client/app/providers.tsx` uses a plain `QueryClientProvider` — no persistence
+  (`gcTime` default 5 min ⇒ cache is GC'd, nothing survives reload).
+- `client/lib/api/hooks.ts`: create-board/create-card have optimistic `onMutate`
+  (snapshot + rollback). **`useUpdateCard` / `useDeleteCard` are invalidate-only** — no
+  optimistic cache write, so a persisted cache would not reflect offline moves/deletes.
+- Canvas renders server cards (react-query) **merged** with `localCards` (zustand `Map`,
+  in-memory only) in `client/features/canvas/CanvasLayer.tsx:21`. `localCards` is lost on
+  reload — the persisted **query cache** must be the durable source after reload.
+- `client/public/manifest.json` exists and is wired (`layout.tsx` metadata) but
+  `public/icons/icon-192.png` / `icon-512.png` **do not exist** ⇒ install fails.
+- `client/app/sw.ts` is minimal Serwist (precache + `defaultCache`),
+  `disable: NODE_ENV !== "production"` ⇒ SW only runs in a production build. No offline
+  fallback page, no install prompt, no sync-status UI.
+- Not installed: `@tanstack/react-query-persist-client`, persister, `idb-keyval`, `yjs`.
 
-2. **Alert custom block cursor escape.** On a new line, inserting an Alert block and
-   typing makes the caret immediately jump to the next line (text escapes the block).
+**Decisions (confirmed with user):**
+1. **Sync engine = TanStack persist + paused-mutation replay.** Reuse existing optimistic
+   hooks; no CRDT. **Yjs is deferred to Phase 3 (collab)** — single-user offline does not
+   need it.
+2. **Conflict policy = `updated_at` guard.** Client sends the base `updated_at`; server
+   returns `409` on stale; client refetches + surfaces a conflict toast. (Only server change.)
+3. **Full PWA polish** — generate icons, install prompt, offline fallback page,
+   sync-status `aria-live` indicator, Lighthouse PWA pass.
 
-## Root causes
+Outcome: open a board online, go offline, drag/edit/create/delete cards, **reload while
+offline** (data + edits intact), reconnect → queued edits replay with conflict-safe
+`updated_at` guard; app is installable and passes Lighthouse PWA.
 
-- **Bug 1:** `migrateInlineContent` (`NotebookEditor.tsx:73-86`) filters inline items by
-  `type` and patches `notebookMention.props`, but it never validates the `text` field of
-  `text` nodes, nor does it recurse into `link` nodes (which hold a nested
-  `content: [{ type:"text", text, styles }]`). A persisted text node with `text: null`
-  (or a link with a null-text child) flows untouched into `initialContent` and crashes
-  `blockToNode`'s `.split()`.
+---
 
-- **Bug 2:** In `client/features/editor/AlertBlock.tsx:48` the icon is rendered as an
-  **inline** `<span contentEditable={false}>` that is a sibling of the `contentRef`
-  content **inside the block's editable inline region**. ProseMirror maps caret offsets
-  by walking inline DOM; an inline `contentEditable=false` node gets miscounted, so input
-  maps the caret past the block boundary → caret jumps to the next line. BlockNote's
-  official Alert example isolates the icon in a **block** `<div contentEditable={false}>`
-  (a widget PM ignores for inline counting) and styles the content hole with
-  `flex-grow: 1`. Our markup uses a `<span>` + `flex: 1` (which is `flex: 1 1 0%`),
-  diverging from the known-good structure.
+## Workstream 1 — Offline reads (query persistence)
 
-Both edits live entirely in `client/` — no server change.
+**Dependency choice (revised — avoid the questioned `*-storage-persister` packages).**
+`@tanstack/query-async-storage-persister` is not formally deprecated, but the maintained
+modern path is per-query `experimental_createPersister`. However, `experimental_createPersister`
+persists **queries only — not paused mutations**, and WS2 (offline write replay across
+reload) needs mutation persistence. So use the whole-client
+**`@tanstack/react-query-persist-client`** (`PersistQueryClientProvider`, persists queries +
+mutations) with a **hand-rolled `Persister`** over `idb-keyval` — dropping
+`@tanstack/query-async-storage-persister` entirely.
 
-## Changes
+New deps (in `client/`): `@tanstack/react-query-persist-client`, `idb-keyval`
+(or raw `idb` if avoiding idb-keyval; no `*-storage-persister` package).
 
-### 1. Harden inline-content sanitization — `client/features/notebook/NotebookEditor.tsx`
+- **`client/lib/api/persister.ts`** (new) — implement the `Persister` interface directly
+  (the documented custom-persister escape hatch):
+  ```ts
+  import { get, set, del } from "idb-keyval";
+  import type { Persister, PersistedClient } from "@tanstack/react-query-persist-client";
+  const KEY = "witsnote-rq";
+  export const idbPersister: Persister = {
+    persistClient: (c: PersistedClient) => set(KEY, c),   // structured-clone, no JSON
+    restoreClient: () => get<PersistedClient>(KEY),
+    removeClient: () => del(KEY),
+  };
+  ```
+  (IndexedDB, not localStorage — board/card payloads exceed the ~5 MB localStorage cap.)
+  Optional throttle on `persistClient` (~1 s) to avoid thrashing during drag bursts.
+- **`client/app/providers.tsx`** — edit:
+  - QueryClient defaults: add `gcTime: 1000 * 60 * 60 * 24 * 7` (7 d) so cached
+    boards/cards survive past `staleTime`; keep `staleTime: 60_000`, `retry: 1`.
+  - Replace `QueryClientProvider` with **`PersistQueryClientProvider`**, passing
+    `persistOptions={{ persister: idbPersister, maxAge: 7d, buster: <pkg version>,
+    dehydrateOptions: { shouldDehydrateMutation: () => true } }}` and
+    `onSuccess={() => queryClient.resumePausedMutations()}`.
+  - Keep `CommandPalette` + `ReactQueryDevtools` children.
 
-Rewrite `migrateInlineContent` (lines 73-86) so every inline item is normalized, not
-just filtered. Add a small helper and apply it recursively:
+Result: `useBoards` / `useBoard` (`hooks.ts`) restore from IndexedDB on cold load — no
+network needed. The proxy route handler is bypassed for offline reads. SW does **not** need
+to cache `/api/proxy` GETs (persistence covers data); SW only handles the app shell.
 
-- For `type === "text"` (or missing `type`, which BlockNote treats as text):
-  guarantee `text` is a string via `typeof text === "string" ? text : ""`, and ensure
-  `styles` is an object (`styles ?? {}`). **Drop** the node if the coerced text is empty
-  (ProseMirror cannot hold an empty text node — BlockNote represents empty inline content
-  as `[]`, so this matches its own normalization and avoids trading the null crash for an
-  "empty text node" crash).
-- For `type === "link"`: recurse the same normalization over `link.content`; drop the
-  link if its content normalizes to empty.
-- For `type === "notebookMention"`: keep the existing `boardId` back-fill.
-- Anything else: filter out (unknown type), as today.
+## Workstream 2 — Offline writes (rehydratable optimistic mutations + replay)
 
-This is the single authoritative fix point because `NotebookEditorInner` already routes
-`tab.blocks` through `sanitizeBlocks` → `migrateInlineContent` before
-`useCreateBlockNote` (`NotebookEditor.tsx:130-132`). Apply the same hardened
-`migrateInlineContent` in `client/features/editor/NotionEditor.tsx` if it carries its own
-copy of the sanitizer (the card editor shares the Alert/mention schema); reuse one shared
-helper rather than duplicating — extract `migrateInlineContent`/`sanitizeBlocks` into a
-small shared module (e.g. `client/lib/notebook/sanitizeBlocks.ts`) and import from both
-editors.
+react-query pauses mutations while offline; to resume them **after a reload**, the
+mutation fns must be rehydratable via `setMutationDefaults` (a closure cannot be persisted).
 
-Keep `EditorBoundary` as-is — it stays a defensive backstop, but the sanitizer now
-prevents the crash so content is no longer lost.
+- **`client/lib/api/hooks.ts`** — refactor card mutations:
+  - Add a `registerMutationDefaults(qc)` that calls `qc.setMutationDefaults` for stable
+    keys: `["cards","create"]`, `["cards","update"]`, `["cards","delete"]` (and board
+    equivalents). Move `mutationFn` + `onMutate`/`onError`/`onSettled` into the defaults.
+  - **Carry `boardId` in mutation *variables*, not the key**, so one default serves every
+    board and survives reload: e.g. update variables become `{ boardId, id, input }`;
+    default `onSettled` invalidates `boardKeys.detail(variables.boardId)`.
+  - `useUpdateCard` / `useDeleteCard` / `useCreateCard` reduce to
+    `useMutation({ mutationKey })` (config lives in defaults).
+  - Call `registerMutationDefaults(queryClient)` once in `providers.tsx` (before persist
+    restore).
+- **Add optimistic cache writes to update + delete** (today they only invalidate):
+  mirror `useCreateCard`'s pattern — `onMutate` snapshots `boardKeys.detail(boardId)`,
+  patches the `cards` array (move/resize/title fields, or removes the card), `onError`
+  rolls back. This is what makes offline moves/deletes **persist across reload** (the
+  patched cache is dehydrated to IndexedDB). zustand `localCards`
+  (`CardShell.tsx` handlers) stays for in-drag smoothness only.
+- Keep `networkMode: "online"` (default) so offline mutations pause. react-query
+  auto-resumes paused mutations when `onlineManager` flips online mid-session;
+  `resumePausedMutations()` (WS1 `onSuccess`) covers the post-reload case.
 
-### 2. Fix Alert block markup — `client/features/editor/AlertBlock.tsx`
+## Workstream 3 — `updated_at` conflict guard (only server change)
 
-Align the `render` output (lines 36-51) with BlockNote's working Alert example:
+- **Client** — `client/lib/api/boards.ts` `updateCard()`: include
+  `base_updated_at` (the cached card's `updated_at`) in the PATCH body. On `409`,
+  the mutation `onError` refetches `boardKeys.detail(boardId)`, clears the stale zustand
+  `localCards` entry, and pushes a conflict toast (WS4 sync-status, `aria-live`).
+- **Server** — `server/app/Http/Controllers/CardController.php` `update()`: if
+  `base_updated_at` present and `!= $card->updated_at`, return
+  `response()->json($freshCard, 409)`; otherwise apply. Last-write-wins fallback when the
+  field is absent. (No migration — `updated_at` already exists.)
+- **Test** — `server/tests/Feature/CardConflictTest.php` (Pest): stale `base_updated_at`
+  ⇒ 409 + fresh card; matching ⇒ 200 + applied.
 
-- Change the icon from an inline `<span contentEditable={false}>` to a **block**
-  `<div contentEditable={false}>` wrapper, so PM treats it as an ignored widget and does
-  not count it in inline caret mapping. Keep `flexShrink: 0` and `user-select: none`.
-- Change the content hole from `style={{ flex: 1 }}` to `style={{ flexGrow: 1, minWidth: 0 }}`
-  (matches official `.inline-content { flex-grow: 1 }`; `minWidth: 0` lets it shrink
-  inside the flex row and gives the caret a stable target). Leave `ref={contentRef}`.
-- Keep the outer flex container and `level` → icon/color logic unchanged.
+## Workstream 4 — PWA install / offline polish
 
-Leave the slash-menu insert path (`NotebookEditor.tsx:176-178`,
-`requestAnimationFrame(() => editor.setTextCursorPosition(b, "start"))`) in place; it is
-the correct re-focus pattern for an async React NodeView. Only revisit it if the markup
-fix alone does not seat the caret on insert (see Fallback).
+- **Icons** — add `client/public/icons/icon.svg` (teal `#0D9488` "W" glyph on
+  `#0B1220`) + generate maskable `icon-192.png` / `icon-512.png` via a one-off
+  `client/scripts/gen-icons.mjs` (`sharp`, devDep) rasterizing the SVG at 192/512 with
+  safe-zone padding. Closes the manifest gap.
+- **Offline fallback** — `client/app/~offline/page.tsx` (static "You're offline" shell);
+  in `client/app/sw.ts` add Serwist `fallbacks: { entries: [{ url: "/~offline",
+  matcher: ({ request }) => request.destination === "document" }] }` and ensure `/~offline`
+  is precached.
+- **Install prompt** — `client/components/ui/InstallPrompt.tsx`: capture
+  `beforeinstallprompt`, stash the deferred event, render a neumorphic "Install" button in
+  `Topbar`; hide once `appinstalled` / `display-mode: standalone`.
+- **Sync-status indicator** — `client/components/ui/SyncStatus.tsx`: subscribe to
+  `onlineManager` + count paused/pending mutations (`useMutationState` /
+  `useIsMutating`), render "Offline · N pending" / "Syncing…" / "Synced" with
+  `aria-live="polite"`. Mount in `Topbar`. Doubles as the WS3 conflict-toast host.
+- **manifest/layout** — already correct; verify `icons` paths resolve after generation.
 
-### Fallback (only if Bug 2 persists after markup fix)
+## Workstream 5 — Tests (offline logic only; full backfill stays cross-cutting)
 
-Per BlockNote issue #1802, switching the Alert from `createReactBlockSpec` to
-`createStronglyTypedTiptapNode` + `createBlockSpecFromStronglyTypedTiptapNode` resolves
-residual cursor/placeholder issues. This is a larger rewrite of `AlertBlock.tsx` — hold
-it in reserve; do not do it preemptively.
+- Add Vitest + RTL config to `client/` (none today): `vitest.config.ts`, `jsdom` env.
+- Unit: persister round-trip (`persister.ts`); update/delete `onMutate` optimistic patch +
+  rollback; 409 conflict `onError` reducer.
+- Pest: `CardConflictTest` (WS3).
 
-## Verification
-
-Client only — run from `client/`. No server/migrations involved.
-
-1. `pnpm lint` — must pass (project rule: never `tsc --noEmit`).
-2. `pnpm dev`, open a board notebook.
-3. **Bug 1 (regression repro):**
-   - Create a page A, add an Alert block + a few lines, insert an `@`-mention to page B.
-   - Click the mention → lands on page B. Refresh the browser on B, then navigate back
-     to A and refresh A.
-   - Expect: A renders with all original content intact, **no** `e.text is null` in
-     console, **no** `[NotebookEditor] initialContent failed` boundary log.
-   - Hard case: in devtools/tinker, seed a tab's `blocks` with an inline text node whose
-     `text` is `null` (and a `link` with a null-text child); reload — editor must render
-     them as empty/normalized rather than crash.
-4. **Bug 2:** On an empty line, open slash menu → insert each Alert level. Type a
-   sentence including spaces. Expect: caret stays inside the Alert block, text wraps
-   normally, no jump to the next line. Press Enter inside the Alert to confirm
-   `nestingEnter` behavior is unaffected.
-5. Confirm existing notebooks (mentions, links, nested toggles) still load and edit.
+---
 
 ## Critical files
 
-- `client/features/notebook/NotebookEditor.tsx` — `migrateInlineContent` / `sanitizeBlocks` (Bug 1)
-- `client/features/editor/NotionEditor.tsx` — shares schema; apply same sanitizer (Bug 1)
-- `client/features/editor/AlertBlock.tsx` — `Alert` render markup (Bug 2)
-- (new) `client/lib/notebook/sanitizeBlocks.ts` — shared sanitizer extracted from the two editors
+| File | Change |
+|------|--------|
+| `client/app/providers.tsx` | PersistQueryClientProvider + gcTime + register defaults |
+| `client/lib/api/persister.ts` | **new** custom `Persister` over idb-keyval (no `*-storage-persister` pkg) |
+| `client/lib/api/hooks.ts` | setMutationDefaults, optimistic update/delete, boardId-in-vars |
+| `client/lib/api/boards.ts` | `updateCard` sends `base_updated_at` |
+| `server/app/Http/Controllers/CardController.php` | `update()` 409 on stale `updated_at` |
+| `client/app/sw.ts` | offline `fallbacks` |
+| `client/app/~offline/page.tsx` | **new** offline shell |
+| `client/public/icons/*` + `client/scripts/gen-icons.mjs` | **new** maskable icons |
+| `client/components/ui/{InstallPrompt,SyncStatus}.tsx` | **new** install + sync UI |
 
-## Sources:
+## Reuse (don't reinvent)
+- Optimistic pattern: copy `useCreateCard` `onMutate`/`onError`/`onSettled`
+  (`hooks.ts:79`) for update/delete.
+- Merge/cull already handle extra/optimistic cards (`CanvasLayer.tsx:21`) — no canvas
+  render change needed.
+- `useHydrated` (`client/hooks/useHydrated.ts`) for SSR-safe online/standalone checks.
+- Topbar already exists — mount Install + SyncStatus there.
 
-- [BlockNote #1802 — createReactBlockSpec cursor](https://github.com/TypeCellOS/BlockNote/issues/1802)
-- [BlockNote #1551 — newline in custom block](https://github.com/TypeCellOS/BlockNote/issues/1551)
-- [Official Alert Block example](https://www.blocknotejs.org/examples/custom-schema/alert-block)
+## Verification (SW only runs in a production build — `disable: NODE_ENV !== "production"`)
+1. `cd client && pnpm build && pnpm start` (server: `docker compose up -d postgres redis`,
+   `php artisan serve`).
+2. Online: open a board, add/move/edit/delete cards.
+3. DevTools → Network **Offline**: drag/edit/create/delete → UI updates; **reload** → data
+   + edits intact (from IndexedDB); navigate to a new route → `/~offline` fallback.
+4. Back **Online**: paused mutations replay; SyncStatus → "Synced"; confirm server state via
+   `GET /api/boards/{id}`.
+5. Conflict: edit same card on a 2nd device, then replay a stale edit → 409 → conflict
+   toast + refetch.
+6. `pnpm test` (Vitest) + `php artisan test --filter=CardConflict`.
+7. Lighthouse → PWA: **installable** + **offline-capable**; verify install prompt and
+   maskable icons.
+
+## Risks / notes
+- **php-pro surface is tiny** — Phase 2 is ~95% frontend; the only server change is the
+  `CardController::update` 409 guard.
+- **Move-mutation volume**: each drag-end queues one `update`; offline bursts replay in
+  order (last-write-wins server-side ⇒ final state correct). Acceptable for single-user;
+  Yjs in P3 collapses this to final state.
+- **Mutation rehydration**: paused mutations only resume post-reload if registered via
+  `setMutationDefaults` with serializable variables — keep `content`/`style` JSON-safe.
+- **`buster`**: bump on cache-shape changes to discard stale persisted caches.
+- Still zero pre-existing tests (`PLAN.md` cross-cutting debt) — scope here to offline
+  logic; broader backfill continues per phase.
+- **Persister dep**: do **not** add `@tanstack/query-async-storage-persister` /
+  `createAsyncStoragePersister` — use the hand-rolled `idbPersister` (WS1).
+  `experimental_createPersister` is queries-only and cannot carry paused-mutation replay.
+- **Yjs (P3, not this phase) — singleton pattern.** When Yjs lands in Phase 3, enforce a
+  single `Y.Doc` per board via a module-level registry (e.g.
+  `const docs = new Map<boardId, Y.Doc>()`), and a single `y-indexeddb`/provider instance
+  per doc. Never construct `Y.Doc`/providers inside React render — create lazily in the
+  registry and reuse across re-renders + HMR to avoid duplicate docs and double-applied
+  updates. Tear down the provider on board unmount.

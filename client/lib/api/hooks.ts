@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   createBoard, createCard, deleteBoard, deleteCard,
   getBoard, getBoards, updateBoard, updateCard, searchCards, unfurlUrl,
@@ -71,16 +72,30 @@ export function useDeleteBoard() {
   });
 }
 
-// Cards
+// Cards — stable mutation variable types for rehydratable offline replay
 export const cardKeys = {
   board: (boardId: string) => ["boards", boardId, "cards"] as const,
 };
 
-export function useCreateCard(boardId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: CreateCardInput) => createCard(boardId, input),
-    onMutate: async (input) => {
+export type CreateCardVars = { boardId: string } & CreateCardInput;
+export type UpdateCardVars = {
+  boardId: string;
+  id: string;
+  input: UpdateCardInput & { base_updated_at?: string };
+};
+export type DeleteCardVars = { boardId: string; cardId: string };
+
+/**
+ * Register stable mutation defaults so paused mutations can be replayed
+ * after a page reload. Call once before PersistQueryClientProvider restores
+ * the cache so the rehydrated mutations find their handlers.
+ */
+export function registerMutationDefaults(qc: QueryClient) {
+  qc.setMutationDefaults(["cards", "create"], {
+    mutationFn: ({ boardId, ...input }: CreateCardVars) =>
+      createCard(boardId, input as CreateCardInput),
+    onMutate: async (vars: CreateCardVars) => {
+      const { boardId, ...input } = vars;
       await qc.cancelQueries({ queryKey: boardKeys.detail(boardId) });
       const snapshot = qc.getQueryData(boardKeys.detail(boardId));
       const tempCard: Card = {
@@ -94,36 +109,104 @@ export function useCreateCard(boardId: string) {
         remind_at: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        ...input,
+        ...(input as CreateCardInput),
       };
-      qc.setQueryData(boardKeys.detail(boardId), (old: (Board & { cards: Card[] }) | undefined) =>
-        old ? { ...old, cards: [...(old.cards ?? []), tempCard] } : old
+      qc.setQueryData(
+        boardKeys.detail(boardId),
+        (old: (Board & { cards: Card[] }) | undefined) =>
+          old ? { ...old, cards: [...(old.cards ?? []), tempCard] } : old
       );
       return { snapshot };
     },
-    onError: (_err, _input, ctx) => {
-      qc.setQueryData(boardKeys.detail(boardId), ctx?.snapshot);
+    onError: (
+      _err: unknown,
+      vars: CreateCardVars,
+      ctx: { snapshot: unknown } | undefined
+    ) => {
+      if (ctx) qc.setQueryData(boardKeys.detail(vars.boardId), ctx.snapshot);
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) });
+    onSettled: (_data: unknown, _err: unknown, vars: CreateCardVars) => {
+      qc.invalidateQueries({ queryKey: boardKeys.detail(vars.boardId) });
+    },
+  });
+
+  qc.setMutationDefaults(["cards", "update"], {
+    mutationFn: ({ id, input, boardId }: UpdateCardVars) => {
+      const board = qc.getQueryData<Board & { cards: Card[] }>(boardKeys.detail(boardId));
+      const base_updated_at = board?.cards.find((c) => c.id === id)?.updated_at;
+      return updateCard(id, { ...input, base_updated_at });
+    },
+    onMutate: async (vars: UpdateCardVars) => {
+      const { boardId, id, input } = vars;
+      await qc.cancelQueries({ queryKey: boardKeys.detail(boardId) });
+      const snapshot = qc.getQueryData(boardKeys.detail(boardId));
+      qc.setQueryData(
+        boardKeys.detail(boardId),
+        (old: (Board & { cards: Card[] }) | undefined) =>
+          old
+            ? { ...old, cards: old.cards.map((c) => (c.id === id ? { ...c, ...input } : c)) }
+            : old
+      );
+      return { snapshot };
+    },
+    onError: (
+      err: unknown,
+      vars: UpdateCardVars,
+      ctx: { snapshot: unknown } | undefined
+    ) => {
+      if (ctx) qc.setQueryData(boardKeys.detail(vars.boardId), ctx.snapshot);
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 409) {
+        qc.invalidateQueries({ queryKey: boardKeys.detail(vars.boardId) });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("card:conflict", { detail: { cardId: vars.id } })
+          );
+        }
+      }
+    },
+    onSettled: (_data: unknown, _err: unknown, vars: UpdateCardVars) => {
+      qc.invalidateQueries({ queryKey: boardKeys.detail(vars.boardId) });
+    },
+  });
+
+  qc.setMutationDefaults(["cards", "delete"], {
+    mutationFn: ({ cardId }: DeleteCardVars) => deleteCard(cardId),
+    onMutate: async (vars: DeleteCardVars) => {
+      const { boardId, cardId } = vars;
+      await qc.cancelQueries({ queryKey: boardKeys.detail(boardId) });
+      const snapshot = qc.getQueryData(boardKeys.detail(boardId));
+      qc.setQueryData(
+        boardKeys.detail(boardId),
+        (old: (Board & { cards: Card[] }) | undefined) =>
+          old ? { ...old, cards: old.cards.filter((c) => c.id !== cardId) } : old
+      );
+      return { snapshot };
+    },
+    onError: (
+      _err: unknown,
+      vars: DeleteCardVars,
+      ctx: { snapshot: unknown } | undefined
+    ) => {
+      if (ctx) qc.setQueryData(boardKeys.detail(vars.boardId), ctx.snapshot);
+    },
+    onSettled: (_data: unknown, _err: unknown, vars: DeleteCardVars) => {
+      qc.invalidateQueries({ queryKey: boardKeys.detail(vars.boardId) });
     },
   });
 }
 
-export function useUpdateCard(boardId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: UpdateCardInput }) => updateCard(id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) }),
-  });
+// Thin hook wrappers — config lives in registerMutationDefaults above
+export function useCreateCard() {
+  return useMutation<Card, Error, CreateCardVars>({ mutationKey: ["cards", "create"] });
 }
 
-export function useDeleteCard(boardId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (cardId: string) => deleteCard(cardId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) }),
-  });
+export function useUpdateCard() {
+  return useMutation<Card, Error, UpdateCardVars>({ mutationKey: ["cards", "update"] });
+}
+
+export function useDeleteCard() {
+  return useMutation<void, Error, DeleteCardVars>({ mutationKey: ["cards", "delete"] });
 }
 
 export function useSearchCards(query: string) {

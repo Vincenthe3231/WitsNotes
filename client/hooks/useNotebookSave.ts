@@ -1,18 +1,25 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { onlineManager } from "@tanstack/react-query";
 import { useUpdateCard } from "@/lib/api/hooks";
 import { NotebookTab } from "@/lib/api/schemas";
 
-type SaveStatus = "idle" | "saving" | "saved" | "error";
+type SaveStatus = "idle" | "saving" | "queued" | "saved" | "error";
 type Payload = { tabs: NotebookTab[]; style?: Record<string, unknown> };
 
 export function useNotebookSave(cardId: string, boardId: string) {
-  const { mutate: updateCard } = useUpdateCard(boardId);
+  const { mutate: updateCard } = useUpdateCard();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Payload | null>(null);
   const [status, setStatus] = useState<SaveStatus>("idle");
+
+  const online = useSyncExternalStore(
+    (cb) => onlineManager.subscribe(cb),
+    () => onlineManager.isOnline(),
+    () => true,
+  );
 
   const doSave = useCallback(
     (tabs: NotebookTab[], style?: Record<string, unknown>) => {
@@ -31,8 +38,13 @@ export function useNotebookSave(cardId: string, boardId: string) {
         ? { ciphertext: style?.ciphertext }
         : { tabs };
 
+      const isOnline = onlineManager.isOnline();
+      console.debug(
+        `[notebook] doSave cardId=${cardId} online=${isOnline} encrypted=${!!isEncrypted}`
+      );
       updateCard(
         {
+          boardId,
           id: cardId,
           input: {
             content: content as Record<string, unknown>,
@@ -50,20 +62,20 @@ export function useNotebookSave(cardId: string, boardId: string) {
         }
       );
     },
-    [cardId, updateCard]
+    [boardId, cardId, updateCard]
   );
 
   const save = useCallback(
     (tabs: NotebookTab[], style?: Record<string, unknown>) => {
       pendingRef.current = { tabs, style };
       if (timer.current) clearTimeout(timer.current);
-      setStatus("saving");
+      setStatus(onlineManager.isOnline() ? "saving" : "queued");
       timer.current = setTimeout(() => {
         const payload = pendingRef.current;
         pendingRef.current = null;
         timer.current = null;
         if (payload) doSave(payload.tabs, payload.style);
-      }, 2000);
+      }, 800);
     },
     [doSave]
   );
@@ -77,5 +89,5 @@ export function useNotebookSave(cardId: string, boardId: string) {
     doSave(payload.tabs, payload.style);
   }, [doSave]);
 
-  return { save, flush, status };
+  return { save, flush, status, online };
 }

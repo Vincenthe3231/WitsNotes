@@ -1,4 +1,6 @@
 allowBuilds:
+  bson: set this to true or false
+  kerberos: set this to true or false
   sharp: true
   unrs-resolver: true
 ignoredBuiltDependencies:

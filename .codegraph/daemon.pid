@@ -1,13 +1,6 @@
 {
-<<<<<<< HEAD
-  "pid": 20604,
+  "pid": 25272,
   "version": "0.9.9",
   "socketPath": "\\\\.\\pipe\\codegraph-db7855777a4fa046",
-  "startedAt": 1781841228942
-=======
-  "pid": 1744,
-  "version": "0.9.9",
-  "socketPath": "\\\\.\\pipe\\codegraph-db7855777a4fa046",
-  "startedAt": 1782151964224
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
+  "startedAt": 1782153409133
 }

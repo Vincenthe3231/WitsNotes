@@ -1,67 +1,64 @@
-# CLAUDE.md
+# CLAUDE.md — Root
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code across the entire monorepo.
 
 ## Code Exploration Rule
-- Always prioritize using CodeGraph tools (`codegraph_context`, `codegraph_explore`, `search_graph`, `get_architecture`) over text search and `Explore` subagents.
-- Do NOT use the `Grep`, `Read`, or `Explore subagents` tools for structural, architecture, or symbol discovery queries.
-- Only use `Grep` for finding specific string litereals, log messages, or configuration values.
 
-## Anti-Patterns to Avoid
-- Spawning `Explore` subagents to read files and directories ❌ -> STRICTLY CodeGraph tools only.
-- Grepping for function/class names ❌ -> Use `search_graph` or `codegraph_explore` instead.
-- Manualy tracing import chains via Read ❌ -> Use `trace_call_path` or graph tools.
-- Scanning files step-by-step for impact analysis ❌ -> Query the graph first.
+**Always use CodeGraph tools first.** The graph is pre-indexed and returns verbatim source in one call.
+
+| Intent | Tool |
+|--------|------|
+| "How does X work?" / "Where is X?" / architecture | `codegraph_explore` (PRIMARY — call first, usually only call needed) |
+| "What is the symbol named X?" (just location) | `codegraph_search` |
+| "What calls this?" | `codegraph_callers` |
+| "What does this call?" | `codegraph_callees` |
+| "What breaks if I change X?" | `codegraph_impact` |
+| Specific string literal / log message / config value | `Grep` (only for literals) |
+
+**Never use `Grep`, `Read`, or `Explore` subagents for structural/symbol/architecture queries.**  
+Never grep for function or class names — use `codegraph_search` or `codegraph_explore`.  
+Never manually trace import chains via `Read` — use codegraph.
 
 ## Architecture
 
-Monorepo with two independent apps:
+Monorepo — two fully independent apps, no shared code:
 
-- **`client/`** — Next.js 16 (App Router), React 19, TypeScript, Tailwind v4. Package manager: `pnpm`.
-- **`server/`** — Laravel 13, PHP 8.3. Default DB: SQLite. Sessions stored in DB.
+- **`client/`** — Next.js 15 (App Router), React 19, TypeScript, Tailwind v4. Package manager: `pnpm`.
+- **`server/`** — Laravel 12, PHP 8.3. DB: **PostgreSQL** (not SQLite). Sessions in DB.
 
-The two apps communicate over HTTP (client calls Laravel API). There is no shared code between them.
+Client calls Laravel over HTTP. Auth uses httpOnly cookie (`wn_sid`) via a Next.js proxy route (`client/app/api/proxy/[...path]/route.ts`) — JS never sees the Bearer token directly.
 
-## Client Commands
+## Commands
 
-Run from `client/`:
+See `client/CLAUDE.md` and `server/CLAUDE.md` for full command references.
 
-```bash
-pnpm dev          # dev server (localhost:3000)
-pnpm build        # production build
-pnpm lint         # ESLint — ALWAYS use this. Never use "pnpx tsc --noEmit".
-```
-
-## Server Commands
-
-Run from `server/`:
+Quick reference:
 
 ```bash
-php artisan serve          # dev server (localhost:8000)
-php artisan migrate        # run migrations
-php artisan migrate:fresh  # drop + re-migrate
-php artisan tinker         # REPL
+# Client (run from client/)
+pnpm dev          # localhost:3000
+pnpm build && pnpm start   # production (required to test SW/offline)
+pnpm lint         # ESLint — ALWAYS run after edits. Never use tsc --noEmit.
 
-composer install           # install PHP deps
-```
-
-Testing (PHPUnit):
-
-```bash
-php artisan test                          # all tests
-php artisan test --filter=TestName        # single test or method
-php artisan test tests/Feature/Foo.php    # single file
+# Server (run from server/)
+php artisan serve              # localhost:8000
+docker compose up -d postgres redis   # must be running before migrate
+php artisan migrate
+php artisan test
 ```
 
 ## Key Conventions
 
-- App Router only — no `pages/` dir in client.
-- Laravel routes split: `routes/web.php` (web/session), `routes/api.php` (stateless API, prefix `/api`).
-- DB is PostgreSQL (switched from SQLite). Run `docker compose up -d postgres redis` before migrating.
-- Fonts loaded via `next/font/google` in `client/app/layout.tsx`; CSS vars `--font-geist-sans` / `--font-geist-mono` available globally.
+- **App Router only** — no `pages/` dir.
+- **DB is PostgreSQL** — run `docker compose up -d postgres redis` before any migration.
+- Laravel routes: `routes/web.php` (web/session), `routes/api.php` (prefix `/api`).
+- Fonts via `next/font/google` in `client/app/layout.tsx`; CSS vars `--font-geist-sans` / `--font-geist-mono` available globally.
+- **Service Worker only runs in production build** (`disable: NODE_ENV !== "production"`). To test offline/PWA: `pnpm build && pnpm start`.
 
-<!-- ## Codebase Exploration
+## Offline-PWA (feat/offline-PWA branch)
 
-**Always use `codegraph_explore` first** when navigating the codebase — it returns verbatim source of relevant symbols in one call (equivalent to Read, but pre-indexed). Fall back to Read/Grep only for detail codegraph didn't cover. Never run a grep+read loop for something codegraph already indexed. -->
-
-
+- Query persistence via `PersistQueryClientProvider` + `idbPersister` (IndexedDB, key `witsnote-rq`).
+- Mutation defaults registered via `registerMutationDefaults(qc)` in `client/lib/api/hooks.ts` — required for paused-mutation rehydration across reload.
+- `onlineManager` uses DOM events only (`online`/`offline`) — **no polling interval**. Do not add `setInterval` back.
+- Conflict guard: `CardController::update` returns 409 when `base_updated_at` is stale.
+- See `client/lib/api/CLAUDE.md` for offline mutation pattern details.

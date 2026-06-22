@@ -59,8 +59,8 @@ function CardShellInner({ card, boardId }: Props) {
   const selectCard = useCanvasStore((s) => s.selectCard);
   const upsertLocalCard = useCanvasStore((s) => s.upsertLocalCard);
   const removeLocalCard = useCanvasStore((s) => s.removeLocalCard);
-  const { mutate: updateCard } = useUpdateCard(boardId);
-  const { mutate: deleteCard } = useDeleteCard(boardId);
+  const { mutate: updateCard } = useUpdateCard();
+  const { mutate: deleteCard } = useDeleteCard();
 
   const isSelected = selectedIds.has(card.id);
   const isNotebook = card.type === "notebook";
@@ -73,24 +73,24 @@ function CardShellInner({ card, boardId }: Props) {
     const t = val.trim();
     if (t !== (card.title ?? "")) {
       upsertLocalCard({ ...card, title: t });
-      updateCard({ id: card.id, input: { title: t } });
+      updateCard({ boardId, id: card.id, input: { title: t } });
     }
   };
 
   const handleMoveEnd = useCallback(
     (x: number, y: number) => {
       upsertLocalCard({ ...card, x, y });
-      updateCard({ id: card.id, input: { x, y } });
+      updateCard({ boardId, id: card.id, input: { x, y } });
     },
-    [card, upsertLocalCard, updateCard]
+    [boardId, card, upsertLocalCard, updateCard]
   );
 
   const handleResizeEnd = useCallback(
     (x: number, y: number, w: number, h: number) => {
       upsertLocalCard({ ...card, x, y, w, h });
-      updateCard({ id: card.id, input: { x, y, w, h } });
+      updateCard({ boardId, id: card.id, input: { x, y, w, h } });
     },
-    [card, upsertLocalCard, updateCard]
+    [boardId, card, upsertLocalCard, updateCard]
   );
 
   const { onPointerDown: onDragDown, onPointerMove: onDragMove, onPointerUp: onDragUp } =
@@ -216,7 +216,7 @@ function CardShellInner({ card, boardId }: Props) {
             e.stopPropagation();
             e.preventDefault();
             removeLocalCard(card.id);
-            deleteCard(card.id);
+            deleteCard({ boardId, cardId: card.id });
           }}
           title="Delete card"
         >

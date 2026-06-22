@@ -2,7 +2,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, CheckCircle, Loader2, Lock, Unlock, PanelLeft } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2, Lock, Unlock, PanelLeft, WifiOff } from "lucide-react";
 import { useBoard, useUpdateCard } from "@/lib/api/hooks";
 import { NotebookTab } from "@/lib/api/schemas";
 import { NotebookSidebar } from "@/features/notebook/NotebookSidebar";
@@ -40,7 +40,7 @@ export default function NotebookPage({
   const router = useRouter();
   const { data, isLoading, isError } = useBoard(boardId);
   const { save, flush, status } = useNotebookSave(cardId, boardId);
-  const { mutate: updateCard } = useUpdateCard(boardId);
+  const { mutate: updateCard } = useUpdateCard();
 
   const card = data?.cards.find((c) => c.id === cardId);
   const isEncrypted = !!(card?.style as { encrypted?: boolean } | null)?.encrypted;
@@ -64,6 +64,14 @@ export default function NotebookPage({
   // Flush pending autosave on unmount (covers SPA navigation away from the page)
   useEffect(() => {
     return () => flush();
+  }, [flush]);
+
+  // Flush on browser reload / tab close (beforeunload doesn't await async, but
+  // calling mutate() synchronously registers the mutation in the QueryClient so
+  // idbPersister can capture it before the page tears down)
+  useEffect(() => {
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
   }, [flush]);
 
   // Clear session key on unmount so reopening always prompts for password
@@ -192,7 +200,7 @@ export default function NotebookPage({
     setEditingTitle(false);
     const t = val.trim();
     if (t && card && t !== (card.title ?? "")) {
-      updateCard({ id: cardId, input: { title: t } });
+      updateCard({ boardId, id: cardId, input: { title: t } });
     }
   }
 
@@ -278,6 +286,11 @@ export default function NotebookPage({
         {status === "saving" && (
           <span className="flex items-center gap-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
             <Loader2 size={12} className="animate-spin" /> Saving…
+          </span>
+        )}
+        {status === "queued" && (
+          <span className="flex items-center gap-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
+            <WifiOff size={12} /> Queued
           </span>
         )}
         {status === "saved" && (

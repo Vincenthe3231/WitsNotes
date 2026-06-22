@@ -96,12 +96,13 @@ function UnfurlRow({ onAdd }: { onAdd: (item: LinkItem) => void }) {
 }
 
 export function LinksListCard({ card, boardId }: Props) {
-  const { mutate: updateCard } = useUpdateCard(boardId);
+  const { mutate: updateCard } = useUpdateCard();
   const [items, setItems] = useState<LinkItem[]>(() => parseContent(card.content));
 
   function persist(next: LinkItem[]) {
     setItems(next);
     updateCard({
+      boardId,
       id: card.id,
       input: {
         content: { items: next } as Record<string, unknown>,

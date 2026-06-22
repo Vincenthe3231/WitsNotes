@@ -100,7 +100,7 @@ function CompactSlashMenu(props: SuggestionMenuProps<DefaultReactSuggestionItem>
 }
 
 export function NotionEditor({ card, boardId }: Props) {
-  const { mutate: updateCard } = useUpdateCard(boardId);
+  const { mutate: updateCard } = useUpdateCard();
   const { dark } = useThemeMode();
   const { data: boardData } = useBoard(boardId);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,6 +122,7 @@ export function NotionEditor({ card, boardId }: Props) {
             .filter((c) => c.type === "text").map((c) => c.text ?? "").join("").slice(0, 80)
         : "";
       updateCard({
+        boardId,
         id: card.id,
         input: {
           content: { blocks },
@@ -130,7 +131,7 @@ export function NotionEditor({ card, boardId }: Props) {
         },
       });
     }, 800);
-  }, [card.id, editor, updateCard]);
+  }, [boardId, card.id, editor, updateCard]);
 
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);

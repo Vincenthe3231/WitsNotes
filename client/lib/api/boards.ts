@@ -37,7 +37,10 @@ export async function createCard(boardId: string, input: CreateCardInput): Promi
   return CardSchema.parse(res.data);
 }
 
-export async function updateCard(cardId: string, input: UpdateCardInput): Promise<Card> {
+export async function updateCard(
+  cardId: string,
+  input: UpdateCardInput & { base_updated_at?: string }
+): Promise<Card> {
   const res = await apiClient.patch(`/cards/${cardId}`, input);
   return CardSchema.parse(res.data);
 }

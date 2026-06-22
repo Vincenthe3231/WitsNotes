@@ -22,13 +22,13 @@ function parseTodos(content: Record<string, unknown> | null): TodoItem[] {
 }
 
 export function TodoCard({ card, boardId }: Props) {
-  const { mutate: updateCard } = useUpdateCard(boardId);
+  const { mutate: updateCard } = useUpdateCard();
   const [todos, setTodos] = useState<TodoItem[]>(() => parseTodos(card.content));
   const [newText, setNewText] = useState("");
 
   function save(next: TodoItem[]) {
     setTodos(next);
-    updateCard({ id: card.id, input: { content: { items: next }, content_text: next.map((t) => t.text).join("\n") } });
+    updateCard({ boardId, id: card.id, input: { content: { items: next }, content_text: next.map((t) => t.text).join("\n") } });
   }
 
   function toggle(id: string) {

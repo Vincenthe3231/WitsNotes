@@ -4,6 +4,8 @@ import { Search, Bell, Moon, Sun, User } from "lucide-react";
 import { useEffect } from "react";
 import { useCommandStore } from "@/stores/commandStore";
 import { useThemeMode } from "@/hooks/useThemeMode";
+import { SyncStatus } from "@/components/ui/SyncStatus";
+import { InstallPrompt } from "@/components/ui/InstallPrompt";
 
 export function Topbar({ title }: { title?: string }) {
   const { dark, toggle: toggleDark } = useThemeMode();
@@ -33,6 +35,9 @@ export function Topbar({ title }: { title?: string }) {
       <h1 className="flex-1 text-base font-semibold truncate" style={{ color: "var(--color-text)" }}>
         {title ?? "Boards"}
       </h1>
+
+      <SyncStatus />
+      <InstallPrompt />
 
       <button
         onClick={togglePalette}

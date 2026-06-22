@@ -25,34 +25,52 @@ function parseBookmark(content: Record<string, unknown> | null): BookmarkData {
 }
 
 export function BookmarkCard({ card, boardId }: Props) {
-  const { mutate: updateCard } = useUpdateCard(boardId);
+  const { mutate: updateCard } = useUpdateCard();
   const [data, setData] = useState<BookmarkData>(() => parseBookmark(card.content));
   const [editing, setEditing] = useState(!data.url);
   const [pendingUrl, setPendingUrl] = useState("");
 
+  // Sync from query cache when not editing and no unfurl in flight (covers IDB restore + refetch updates).
+  // Guard on pendingUrl prevents the race where save({url}) server response stomps merged unfurl data.
+  useEffect(() => {
+    if (!editing && !pendingUrl) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setData(parseBookmark(card.content));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.content]);
+
   const { data: unfurled, isFetching: unfurling } = useUnfurlUrl(pendingUrl);
 
+  // When unfurl completes: merge metadata, auto-exit edit mode, persist to DB + IDB.
   useEffect(() => {
-    if (unfurled && pendingUrl) {
-      const url = pendingUrl;
-      const u = unfurled;
-      setTimeout(() => {
-        setData((d) => ({
-          url,
-          title: u.title ?? d.title,
-          description: u.description ?? d.description,
-          image: u.image ?? d.image,
-          site_name: u.site_name ?? d.site_name,
-          favicon: u.favicon ?? d.favicon,
-        }));
-        setPendingUrl("");
-      }, 0);
-    }
-  }, [unfurled, pendingUrl]);
+    if (!unfurled || !pendingUrl) return;
+    const merged: BookmarkData = {
+      url: pendingUrl,
+      title: unfurled.title,
+      description: unfurled.description,
+      image: unfurled.image,
+      site_name: unfurled.site_name,
+      favicon: unfurled.favicon,
+    };
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setData(merged);
+    setPendingUrl("");
+    setEditing(false);
+    updateCard({
+      boardId,
+      id: card.id,
+      input: {
+        content: merged as Record<string, unknown>,
+        content_text: `${merged.title ?? ""} ${merged.url ?? ""}`.trim(),
+      },
+    });
+  }, [unfurled, pendingUrl, boardId, card.id, updateCard]);
 
   function save(next: BookmarkData) {
     setData(next);
     updateCard({
+      boardId,
       id: card.id,
       input: {
         content: next as Record<string, unknown>,
@@ -101,7 +119,12 @@ export function BookmarkCard({ card, boardId }: Props) {
         ))}
 
         <button
-          onClick={() => { save(data); setEditing(false); }}
+          onClick={() => {
+            // Always persist current data on Save. The sync-effect guard (!pendingUrl) prevents
+            // the server response from this save stomping the upcoming unfurl-merged update.
+            save(data);
+            setEditing(false);
+          }}
           className="self-end text-sm px-3 py-1 rounded-lg cursor-pointer"
           style={{ background: "var(--color-primary)", color: "#fff" }}
         >Save</button>
@@ -140,7 +163,7 @@ export function BookmarkCard({ card, boardId }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <ExternalLink size={12} />
-            {data.site_name || (() => { try { return new URL(data.url).hostname; } catch { return data.url; } })()}
+            {data.site_name || (() => { try { return new URL(data.url!).hostname; } catch { return data.url; } })()}
           </a>
         )}
       </div>

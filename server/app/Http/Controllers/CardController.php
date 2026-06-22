@@ -54,20 +54,31 @@ class CardController extends Controller
         $this->authorize('update', $card->board);
 
         $data = $request->validate([
-            'title'        => ['sometimes', 'nullable', 'string', 'max:255'],
-            'x'            => ['sometimes', 'numeric'],
-            'y'            => ['sometimes', 'numeric'],
-            'w'            => ['sometimes', 'numeric'],
-            'h'            => ['sometimes', 'numeric'],
-            'z'            => ['sometimes', 'integer'],
-            'rotation'     => ['sometimes', 'numeric'],
-            'style'        => ['nullable', 'array'],
-            'content'      => ['nullable', 'array'],
-            'content_text' => ['nullable', 'string'],
-            'due_at'       => ['nullable', 'date'],
-            'remind_at'    => ['nullable', 'date'],
+            'title'            => ['sometimes', 'nullable', 'string', 'max:255'],
+            'x'                => ['sometimes', 'numeric'],
+            'y'                => ['sometimes', 'numeric'],
+            'w'                => ['sometimes', 'numeric'],
+            'h'                => ['sometimes', 'numeric'],
+            'z'                => ['sometimes', 'integer'],
+            'rotation'         => ['sometimes', 'numeric'],
+            'style'            => ['nullable', 'array'],
+            'content'          => ['nullable', 'array'],
+            'content_text'     => ['nullable', 'string'],
+            'due_at'           => ['nullable', 'date'],
+            'remind_at'        => ['nullable', 'date'],
+            'base_updated_at'  => ['sometimes', 'nullable', 'string'],
         ]);
 
+        if (
+            isset($data['base_updated_at']) &&
+            $data['base_updated_at'] !== null &&
+            $card->updated_at->toISOString() !== $data['base_updated_at']
+        ) {
+            $card->refresh();
+            return response()->json($card, 409);
+        }
+
+        unset($data['base_updated_at']);
         $card->update($data);
 
         return response()->json($card);

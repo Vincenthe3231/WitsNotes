@@ -20,6 +20,7 @@ Status legend: ✅ done · 🟡 partial · ⬜ not started.
 - Cards: `CardController` CRUD + `search`; `Card` model; polymorphic `type` enum, `x/y/w/h/z/rotation`, `content` jsonb, `content_text`, `due_at`/`remind_at`.
 - Unfurl: `UnfurlController` scrapes OG tags for bookmarks.
 - Migrations incl. `enable_pg_trgm_extension`; routes in `server/routes/api.php` (`apiResource` boards + shallow cards, `/cards/search`, `/unfurl`).
+- Offline conflict guard: `CardController::update` returns **409 + fresh card** when client `base_updated_at` is stale; last-write-wins when absent. Covered by Pest `CardConflictTest` (3 cases) + `Board`/`Card` factories.
 
 **Frontend (Next.js, `client/`)** — ✅ canvas + notes MVP:
 - Canvas: `InfiniteCanvas` + `CanvasLayer` (viewport culling, single GPU transform wrapper), `useCanvasPointer` (rAF-throttled pan + wheel zoom, scale clamp 0.1–4), `useCardDrag` (8px snap), `useCardResize`; `canvasStore` (zustand: viewport/selection/dragging/localCards).
@@ -29,10 +30,10 @@ Status legend: ✅ done · 🟡 partial · ⬜ not started.
 - Data: `lib/api/{client(axios),boards,hooks,schemas(zod),auth}.ts` — tanstack-query with optimistic create for boards/cards; `react-query-devtools` wired.
 - Search: `CommandPalette` (cmdk) Commands + Search tabs; `commandStore` registry; `useSearchCards`.
 - Crypto (vault): `lib/crypto/notebook.ts` — Argon2id (`crypto_pwhash`) KDF, `crypto_secretbox` encrypt/decrypt, salt + verifier, session-cached key; `PasswordModal` + `SetPasswordModal`; `useNotebookSave` blanks `content_text` when encrypted (keeps vault out of search index).
-- PWA: `app/sw.ts` (Serwist precache + `defaultCache` runtime caching, skipWaiting, navigationPreload).
+- PWA / offline (`feat/offline-PWA`): **query persistence** via `lib/api/persister.ts` (`idbPersister`, idb-keyval, key `witsnote-rq`, 300ms throttle) + `PersistQueryClientProvider` in `providers.tsx` (`maxAge` 7d, `buster v1`, `resumePausedMutations()` on restore); **offline mutation queue** via `registerMutationDefaults` (cards create/update/delete) + `shouldDehydrateMutation: () => true` so paused mutations survive reload; `onlineManager` driven by DOM `online`/`offline` events only; **`SyncStatus`** (aria-live: offline / `N pending` / syncing / synced / conflict) + **`InstallPrompt`** (`beforeinstallprompt`); **manifest** `public/manifest.json` + maskable icons (192/512, `scripts/gen-icons.mjs`); **SW** `app/sw.ts` (Serwist precache + `defaultCache` runtime caching, skipWaiting, navigationPreload, `~offline` document fallback).
 - Auth/shell: `proxy.ts` (cookie `wn_sid` route guard), `authStore`, `useAuthGuard`, login/register pages, `Sidebar`, `Topbar`, theme tokens, `useThemeMode`, `useHydrated`.
 
-**Cross-cutting gap:** ⚠️ **zero automated tests** — codegraph reports "no covering tests" across all canvas/editor/crypto symbols.
+**Cross-cutting gap:** 🟡 **tests bootstrapped, coverage thin** — first automated tests landed: Pest `CardConflictTest` (3 cases) + `Board`/`Card` factories (phpunit on SQLite). Still **no frontend tests** (Vitest/RTL) and **no Board/Card/Auth CRUD coverage** — codegraph reports "no covering tests" across all canvas/editor/crypto symbols.
 
 ---
 
@@ -50,6 +51,8 @@ Browser PWA (Next.js 16, React 19) ── REST/JSON (axios + Sanctum token) ─�
 ```
 
 Services (each a multi-stage Dockerfile, composed): `web` (Next standalone), `api` (php-fpm+nginx), `collab` (Node, Phase 3), `ocr` (Python, Phase 4), `postgres`, `redis`, `minio` (dev). Plain REST + one CRDT socket — no CQRS.
+
+**Offline divergence from diagram:** Phase 2 offline ships **without Yjs**. Local-first persistence is **TanStack-Query cache → IndexedDB (`idbPersister`) + a paused-mutation queue + a server-side 409 optimistic-concurrency guard** (`base_updated_at`), *not* a Y.Doc. `yjs` is installed but unused — reserved for Phase 3 collaboration (`y-indexeddb` + Hocuspocus). The diagram's `Yjs + y-indexeddb` offline-doc line is a Phase-3 target, not current state.
 
 **Note model clarification:** "notebook" is a card type whose `content.tabs` is a recursive `NotebookTab[]` page tree, edited full-screen. Vault encryption currently lives at the **notebook-card** level (`style.encrypted` + `content.ciphertext`); `Board.is_vault/vault_salt/vault_verifier` columns exist for a future **board-level** lock — reconcile in Phase 5.
 
@@ -83,17 +86,17 @@ Remaining Phase-1 tasks:
 - ⬜ **OS drag-and-drop import** — drop files onto canvas → upload → create typed card at drop point; paste-from-clipboard (image/url).
 - ⬜ **Card multi-select + group ops** — marquee select (selection state exists in store, wire UI), group move/delete/duplicate, z-order controls.
 - ⬜ **Shortcuts cheatsheet** — `?`-triggered modal listing keybindings (command palette exists; add static sheet).
-- ⬜ **Tests** — Pest feature tests for Board/Card/Auth controllers; Vitest+RTL for `canvasStore`, `useCardDrag`, culling math.
+- 🟡 **Tests** — ✅ Pest `CardConflictTest` + factories landed; ⬜ still owed: Pest CRUD for Board/Card/Auth controllers; Vitest+RTL for `canvasStore`, `useCardDrag`, culling math.
 
-### Phase 2 — Offline-first PWA 🟡 (asset cache only)
-Done: ✅ Serwist SW (precache + runtime asset caching).
+### Phase 2 — Offline-first PWA 🟡 → mostly ✅ (non-Yjs strategy)
+Done: ✅ Serwist SW (precache + runtime asset caching + `~offline` document fallback).
 
-Remaining:
-- ⬜ **Query persistence** — add `@tanstack/react-query-persist-client` + IndexedDB persister (e.g. `idb-keyval`); wire in `providers.tsx` so boards/cards read offline.
-- ⬜ **Offline mutation queue** — persist mutations and replay on reconnect (react-query `onlineManager` + a durable queue, or fold into Yjs in P3); surface sync status via `aria-live`.
-- ⬜ **Yjs local doc** — install `yjs` + `y-indexeddb`; model each board as a Y.Doc (cards as `Y.Map`); local-first single-user first (no socket yet). Migrate canvas mutations to write through the Y.Doc.
-- ⬜ **PWA manifest + icons + install** — `manifest.json`, maskable icons, offline fallback page; Lighthouse PWA pass (installable + offline-capable).
-- ⬜ **Conflict-free local edits** — ensure `localCards` overrides reconcile with Y.Doc as source of truth.
+- ✅ **Query persistence** — `@tanstack/react-query-persist-client` + `idbPersister` (idb-keyval, key `witsnote-rq`) wired in `providers.tsx`; boards/cards read offline (`maxAge` 7d, `buster v1`).
+- ✅ **Offline mutation queue** — `registerMutationDefaults` (cards create/update/delete) + `shouldDehydrateMutation: () => true`; paused mutations rehydrate on reload and replay via `resumePausedMutations()` on cache restore. `onlineManager` uses DOM `online`/`offline` events (no polling). Sync status surfaced via `SyncStatus` (`aria-live`).
+- ✅ **Backend conflict guard** — `CardController::update` returns 409 + fresh card on stale `base_updated_at`; client handles 409 → invalidate + `card:conflict` event → `SyncStatus` banner. Pest `CardConflictTest` (3 cases) + factories.
+- ✅ **PWA manifest + icons + install** — `public/manifest.json`, maskable icons (192/512, `scripts/gen-icons.mjs`), `InstallPrompt` (`beforeinstallprompt`), `~offline` fallback page. ⬜ Lighthouse PWA audit (installable + offline-capable) still to run.
+- ✅ **Conflict-free local edits** — chosen path = optimistic query cache + server-side 409 optimistic-concurrency guard (`base_updated_at`) + LWW fallback, *not* CRDT. Reconciles via cache invalidation on conflict.
+- ⬜ **Yjs local doc** — *deferred to Phase 3*. `yjs` dep installed but unused; no `y-indexeddb`, no Y.Doc model. Will land with collab (each board a Y.Doc, cards as `Y.Map`), superseding the 409 guard for collaborative boards.
 
 ### Phase 3 — Real-time collaboration ⬜ (not started)
 - ⬜ **`collab/` sidecar** — Node + **Hocuspocus** server; new service + multi-stage Dockerfile + compose entry.
@@ -142,7 +145,8 @@ Search + OCR:
 - **PWA/Lighthouse:** installable + offline-capable; 60fps pan with 500+ cards (culling); contrast, focus-state, `prefers-reduced-motion` audit.
 
 ## Open Items / Risks
-- **No tests yet** — highest-priority cross-cutting debt; backfill alongside each phase before adding surface area.
+- **Thin test coverage** — conflict-guard suite + factories landed (first tests); still highest-priority debt for frontend (Vitest/RTL) + Board/Card/Auth CRUD (Pest). Backfill alongside each phase before adding surface area.
+- **Two reconciliation models** — P2 offline shipped *without* Yjs: server-side LWW + 409 version check (`base_updated_at`) is the current model; future Yjs CRDT (P3 collab) is a second model. Reconcile when collab lands — decide whether single-user boards keep the 409 path or migrate to Y.Doc.
 - **Yjs + vault** — encrypted boards excluded from live collab (single-user) to avoid encrypted-CRDT complexity.
 - **Vault scope drift** — card-level (`style.encrypted`) vs board-level (`Board.vault_*`) must be unified (Phase 5) to avoid two crypto paths.
 - **Search** — today's `ilike` is substring-only; "fuzzy" requires the `pg_trgm` upgrade (Phase 4).

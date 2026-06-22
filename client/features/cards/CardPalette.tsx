@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function CardPalette({ boardId }: Props) {
-  const { mutate: createCard } = useCreateCard(boardId);
+  const { mutate: createCard } = useCreateCard();
   const viewport = useCanvasStore((s) => s.viewport);
 
   function spawnCard(type: CardType) {
@@ -27,7 +27,7 @@ export function CardPalette({ boardId }: Props) {
     const h = type === "link_list" ? 320 : 200;
     const x = Math.round(((vw / 2 - viewport.x) / viewport.scale - w / 2));
     const y = Math.round(((vh / 2 - viewport.y) / viewport.scale - h / 2));
-    createCard({ type, x, y, w, h, z: 10, rotation: 0 });
+    createCard({ boardId, type, x, y, w, h, z: 10, rotation: 0 });
   }
 
   return (
