@@ -1,15 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-<<<<<<< HEAD
-import { ChevronRight, FileText, Plus, Trash2, PanelLeftClose } from "lucide-react";
-import { NotebookTab } from "@/lib/api/schemas";
-=======
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, FileText, Plus, Trash2, PanelLeftClose, Link2 } from "lucide-react";
 import { NotebookTab } from "@/lib/api/schemas";
 import { type Backlink } from "@/lib/notebook/tree";
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
 
 interface Props {
   tabs: NotebookTab[];
@@ -23,13 +18,10 @@ interface Props {
   /** Move `fromId` under `toParentId` (null = root) at `index`. */
   onMove: (fromId: string, toParentId: string | null, index: number) => void;
   onCollapseSidebar: () => void;
-<<<<<<< HEAD
-=======
   backlinks?: Backlink[];
   currentCardId?: string;
   currentTabId?: string;
   boardId?: string;
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
 }
 
 const ROW_PAD = 8;
@@ -37,14 +29,6 @@ const INDENT = 14;
 
 export function NotebookSidebar({
   tabs, activeId, title, onSelect, onAdd, onRename, onDelete, onMove, onCollapseSidebar,
-<<<<<<< HEAD
-}: Props) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const dragId = useRef<string | null>(null);
-
-=======
   backlinks,
 }: Props) {
   const router = useRouter();
@@ -81,7 +65,6 @@ export function NotebookSidebar({
     }, 100);
   }
 
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
   function toggleCollapse(id: string) {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -120,11 +103,7 @@ export function NotebookSidebar({
             }
             dragId.current = null;
           }}
-<<<<<<< HEAD
-          onClick={() => onSelect(node.id)}
-=======
           onClick={() => handleSelectTab(node.id)}
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
           onKeyDown={(e) => {
             if (e.key === "Enter") onSelect(node.id);
             if (e.key === "ArrowRight" && hasChildren && isCollapsed) toggleCollapse(node.id);
@@ -231,17 +210,6 @@ export function NotebookSidebar({
     >
       <div className="flex items-center gap-2 px-3" style={{ height: 44, borderBottom: "1px solid var(--glass-border)" }}>
         <span className="flex-1 text-xs font-semibold uppercase tracking-wide truncate" style={{ color: "var(--color-text-muted)" }}>
-<<<<<<< HEAD
-          {title ?? "Pages"}
-        </span>
-        <button
-          onClick={() => onAdd(null)}
-          title="New page"
-          style={{ display: "flex", alignItems: "center", padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--color-text-muted)", borderRadius: 6 }}
-        >
-          <Plus size={15} />
-        </button>
-=======
           {showBacklinks ? "Backlinks" : (title ?? "Pages")}
         </span>
         {!showBacklinks && (
@@ -273,7 +241,6 @@ export function NotebookSidebar({
             <ChevronRight size={15} />
           </button>
         )}
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
         <button
           onClick={onCollapseSidebar}
           title="Hide sidebar"
@@ -283,21 +250,6 @@ export function NotebookSidebar({
         </button>
       </div>
 
-<<<<<<< HEAD
-      <div
-        role="tree"
-        aria-label="Page tree"
-        className="flex-1 overflow-y-auto p-2"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={() => {
-          // Drop into empty tree area → move to root end.
-          if (dragId.current) onMove(dragId.current, null, tabs.length);
-          dragId.current = null;
-        }}
-      >
-        {tabs.map((node) => renderNode(node, 0))}
-      </div>
-=======
       {!showBacklinks ? (
         <div
           role="tree"
@@ -346,7 +298,6 @@ export function NotebookSidebar({
           )}
         </div>
       )}
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
     </aside>
   );
 }

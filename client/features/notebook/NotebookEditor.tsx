@@ -19,11 +19,7 @@ import { useThemeMode } from "@/hooks/useThemeMode";
 import { uploadAttachment } from "@/lib/api/boards";
 import { useBoard } from "@/lib/api/hooks";
 import { NotebookMention } from "@/features/editor/NotebookMention";
-<<<<<<< HEAD
-import { flattenTabsForMention } from "@/lib/notebook/tree";
-=======
 import { flattenTabsForMention, generateAnchorId } from "@/lib/notebook/tree";
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
 import { BookOpen } from "lucide-react";
 import { nestingEnter } from "@/features/notebook/nestingEnter";
 import { sanitizeBlocks } from "@/lib/notebook/sanitizeBlocks";
@@ -33,10 +29,7 @@ const schema = BlockNoteSchema.create({
   inlineContentSpecs: { ...defaultInlineContentSpecs, notebookMention: NotebookMention },
 });
 
-<<<<<<< HEAD
-=======
 
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
 function CompactSlashMenu(props: SuggestionMenuProps<DefaultReactSuggestionItem>) {
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -107,8 +100,6 @@ function NotebookEditorInner({ tab, boardId, onChange }: Props) {
     changeRef.current(editor.document as Block[]);
   }, [editor]);
 
-<<<<<<< HEAD
-=======
   // Assign anchor IDs to rendered headings once after mount.
   // Using a one-shot rAF avoids the infinite-loop that a MutationObserver causes
   // (setting el.id is itself a DOM mutation that would re-fire the observer).
@@ -130,7 +121,6 @@ function NotebookEditorInner({ tab, boardId, onChange }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [editor]); // run once on mount — heading scroll is best-effort
 
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
   return (
     <BlockNoteView
       editor={editor}
@@ -194,11 +184,7 @@ function NotebookEditorInner({ tab, boardId, onChange }: Props) {
               onItemClick: () => {
                 editor.insertInlineContent([
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-<<<<<<< HEAD
-                  { type: "notebookMention" as any, props: { boardId: t.boardId, cardId: t.cardId, tabId: t.tabId ?? "", label: t.label } },
-=======
                   { type: "notebookMention" as any, props: { boardId: t.boardId, cardId: t.cardId, tabId: t.tabId ?? "", sectionId: t.sectionId ?? "", label: t.label } },
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
                   " ",
                 ]);
               },

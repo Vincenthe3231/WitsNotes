@@ -1,9 +1,4 @@
 import { Card, NotebookTab } from "@/lib/api/schemas";
-<<<<<<< HEAD
-
-/** Immutable helpers over a forest of NotebookTab pages (content.tabs). */
-
-=======
 import { Block } from "@blocknote/core";
 
 /** Immutable helpers over a forest of NotebookTab pages (content.tabs). */
@@ -30,7 +25,6 @@ export function getBlockAnchor(block: Block): string | null {
   return null;
 }
 
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
 export function findNode(tree: NotebookTab[], id: string): NotebookTab | null {
   for (const node of tree) {
     if (node.id === id) return node;
@@ -133,10 +127,7 @@ export type MentionTarget = {
   boardId: string;
   cardId: string;
   tabId?: string;
-<<<<<<< HEAD
-=======
   sectionId?: string;
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
   label: string;
   path: string;
 };
@@ -153,8 +144,6 @@ function walkTabs(
     const crumbs = [...breadcrumb, tab.title];
     const path = [notebookTitle, ...crumbs].join(" › ");
     out.push({ id: `${cardId}:${tab.id}`, boardId, cardId, tabId: tab.id, label: crumbs.join(" › "), path });
-<<<<<<< HEAD
-=======
 
     // Extract headings from the tab's blocks as mention targets
     if (tab.blocks?.length) {
@@ -174,13 +163,10 @@ function walkTabs(
       }
     }
 
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
     if (tab.children?.length) walkTabs(tab.children, boardId, cardId, notebookTitle, crumbs, out);
   }
 }
 
-<<<<<<< HEAD
-=======
 /** Extract headings from a blocks array, returning text and anchor for each. */
 function extractHeadingsFromBlocks(blocks: unknown[]): Array<{ text: string; anchor: string }> {
   const headings: Array<{ text: string; anchor: string }> = [];
@@ -199,7 +185,6 @@ function extractHeadingsFromBlocks(blocks: unknown[]): Array<{ text: string; anc
   return headings;
 }
 
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
 export function flattenTabsForMention(cards: Card[]): MentionTarget[] {
   const out: MentionTarget[] = [];
   for (const card of cards) {
@@ -211,8 +196,6 @@ export function flattenTabsForMention(cards: Card[]): MentionTarget[] {
   }
   return out;
 }
-<<<<<<< HEAD
-=======
 
 export type Backlink = {
   sourceCardId: string;
@@ -285,4 +268,3 @@ export function findBacklinks(
 
   return backlinks;
 }
->>>>>>> 58553d77e51c77a7200c4401cda65debff7b21ad
