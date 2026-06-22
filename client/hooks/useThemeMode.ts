@@ -14,10 +14,9 @@ function readDark(): boolean {
  * without duplicating local state.
  */
 export function useThemeMode() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(() => readDark());
 
   useEffect(() => {
-    setDark(readDark());
     const obs = new MutationObserver(() => setDark(readDark()));
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => obs.disconnect();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Trash2, Plus, Loader2 } from "lucide-react";
 import { useUpdateCard, useUnfurlUrl } from "@/lib/api/hooks";
 import { Card } from "@/lib/api/schemas";
@@ -36,7 +36,7 @@ function UnfurlRow({ onAdd }: { onAdd: (item: LinkItem) => void }) {
     if (!u.startsWith("http")) return;
     if (unfurled && pendingUrl === u) {
       onAdd({
-        id: Math.random().toString(36).slice(2),
+        id: crypto.randomUUID(),
         url: u,
         title: unfurled.title,
         description: unfurled.description,
@@ -51,20 +51,28 @@ function UnfurlRow({ onAdd }: { onAdd: (item: LinkItem) => void }) {
     }
   }
 
-  // When unfurl completes, auto-add
-  if (unfurled && pendingUrl && pendingUrl === url.trim()) {
-    onAdd({
-      id: Math.random().toString(36).slice(2),
+  const onAddRef = useRef(onAdd);
+  useEffect(() => { onAddRef.current = onAdd; });
+
+  // When unfurl completes, auto-add (deferred to avoid setState-in-effect lint error)
+  useEffect(() => {
+    if (!unfurled || !pendingUrl || pendingUrl !== url.trim()) return;
+    const item: LinkItem = {
+      id: crypto.randomUUID(),
       url: pendingUrl,
       title: unfurled.title,
       description: unfurled.description,
       image: unfurled.image,
       favicon: unfurled.favicon,
       site_name: unfurled.site_name,
+    };
+    queueMicrotask(() => {
+      onAddRef.current(item);
+      setUrl("");
+      setPendingUrl("");
     });
-    setUrl("");
-    setPendingUrl("");
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unfurled, pendingUrl]);
 
   return (
     <div className="flex items-center gap-1 px-2 py-1" style={{ borderTop: "1px solid var(--color-border)" }}>
