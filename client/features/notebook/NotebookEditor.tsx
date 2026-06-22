@@ -100,44 +100,26 @@ function NotebookEditorInner({ tab, boardId, onChange }: Props) {
     changeRef.current(editor.document as Block[]);
   }, [editor]);
 
-  // Update heading and mention block IDs when document changes
+  // Assign anchor IDs to rendered headings once after mount.
+  // Using a one-shot rAF avoids the infinite-loop that a MutationObserver causes
+  // (setting el.id is itself a DOM mutation that would re-fire the observer).
   useEffect(() => {
-    const blocks = editor.document as Block[];
-
-    // Use a MutationObserver to add IDs to headings and mention blocks as they're rendered
-    const observer = new MutationObserver(() => {
-      for (const block of blocks) {
-        if (block.type === "heading") {
-          const content = (block.content as Array<{ text?: string } | null> | null)?.[0]?.text ?? "";
-          if (content) {
-            const anchor = generateAnchorId(block.id, content);
-            // Find the heading element by looking for the text in h1-h3 elements
-            const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
-            for (const heading of headings) {
-              if (heading.textContent === content && !heading.id) {
-                heading.id = anchor;
-                heading.style.scrollMarginTop = "100px";
-              }
-            }
+    const raf = requestAnimationFrame(() => {
+      for (const block of editor.document as Block[]) {
+        if (block.type !== "heading") continue;
+        const text = (block.content as Array<{ text?: string }> | null)?.[0]?.text ?? "";
+        if (!text) continue;
+        const anchor = generateAnchorId(block.id, text);
+        document.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((el) => {
+          if (el.textContent === text && el.id !== anchor) {
+            el.id = anchor;
+            (el as HTMLElement).style.scrollMarginTop = "100px";
           }
-        } else {
-          // For blocks with mentions, add IDs to the block container
-          const inlineContent = (block.content as Array<Record<string, unknown>> | null) || [];
-          if (inlineContent.some((c) => c?.type === "notebookMention")) {
-            const blockElements = document.querySelectorAll(`[data-block-id="${block.id}"]`);
-            for (const blockEl of blockElements) {
-              if (!blockEl.id) {
-                blockEl.id = `block-${block.id}`;
-              }
-            }
-          }
-        }
+        });
       }
     });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [editor.document]);
+    return () => cancelAnimationFrame(raf);
+  }, [editor]); // run once on mount — heading scroll is best-effort
 
   return (
     <BlockNoteView

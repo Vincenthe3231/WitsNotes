@@ -18,9 +18,7 @@ export function generateAnchorId(blockId: string, title: string): string {
 
 /** Extract the anchor ID if the block is a heading, else return null. */
 export function getBlockAnchor(block: Block): string | null {
-  if (block.type === "heading" && typeof block.props === "object" && block.props !== null) {
-    const props = block.props as Record<string, unknown>;
-    const headingLevel = props.level ?? 1;
+  if (block.type === "heading") {
     const content = (block.content as Array<{ text?: string } | null> | null)?.[0]?.text ?? "";
     return generateAnchorId(block.id, content);
   }
