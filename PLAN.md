@@ -81,12 +81,12 @@ Tokens already wired as CSS vars (`--color-*`, `--glass-*`, `--nb-*`). Canonical
 Done: ✅ boards/cards CRUD + optimistic hooks · ✅ infinite canvas pan/zoom/cull/drag(snap)/resize · ✅ Memo/Todo/Task/Bookmark/Notebook cards · ✅ BlockNote editor + custom callout · ✅ wiki notebook (nested pages, DnD, autosave) · ✅ command palette + command registry · ✅ bookmark unfurl · ✅ auth pages + route guard.
 
 Remaining Phase-1 tasks:
-- ⬜ **Media cards** — implement components for enum types already declared but unbuilt: `image`, `file`, `audio`, `gif`. Renderers + upload flow.
-- ⬜ **Upload pipeline** — `attachments` table (`card_id`, `disk`, `path`, `mime`, `size`, `ocr_status`, `ocr_text`); Laravel `AttachmentController` (store/show/destroy) to S3/MinIO; signed URLs.
-- ⬜ **OS drag-and-drop import** — drop files onto canvas → upload → create typed card at drop point; paste-from-clipboard (image/url).
+- ✅ **Media cards** — `ImageCard`, `GifCard`, `AudioCard`, `FileCard` with renderers + progress states + retry UI.
+- ✅ **Upload pipeline** — `attachments` table + `AttachmentController` store/show/destroy; Cloudflare R2 storage; `uploadCardAttachment` shared helper.
+- 🟡 **OS drag-and-drop import** — `useCanvasDropImport` exists; wire to canvas drop handler; paste-from-clipboard (image/url) not yet done.
 - ⬜ **Card multi-select + group ops** — marquee select (selection state exists in store, wire UI), group move/delete/duplicate, z-order controls.
 - ⬜ **Shortcuts cheatsheet** — `?`-triggered modal listing keybindings (command palette exists; add static sheet).
-- 🟡 **Tests** — ✅ Pest `CardConflictTest` + factories landed; ⬜ still owed: Pest CRUD for Board/Card/Auth controllers; Vitest+RTL for `canvasStore`, `useCardDrag`, culling math.
+- 🟡 **Tests** — ✅ Pest `CardConflictTest` + factories + `AttachmentTest` landed; ✅ Vitest `uploadAttachment.test.ts` (XHR mock, progress, timeout); ⬜ still owed: Board/Card/Auth CRUD coverage; `canvasStore`, `useCardDrag`, culling math.
 
 ### Phase 2 — Offline-first PWA 🟡 → mostly ✅ (non-Yjs strategy)
 Done: ✅ Serwist SW (precache + runtime asset caching + `~offline` document fallback).

@@ -31,7 +31,7 @@ components/
 features/
   boards/              Board list / create
   canvas/              Drag-and-drop canvas (CanvasLayer, card drag/resize, zustand store)
-  cards/               Card type components (BookmarkCard, TodoCard, LinksListCard…)
+  cards/               Card type components (BookmarkCard, TodoCard, ImageCard, AudioCard, FileCard, GifCard…)
   editor/              AlertBlock, NotebookMention inline content
   notebook/            NotebookEditor (BlockNote), NotebookSidebar, tree utils
 
@@ -74,3 +74,10 @@ public/
 - All interactive components: `"use client"` directive.
 - SSR-safe browser checks: use `useHydrated()` hook, not bare `typeof window !== "undefined"` in render.
 - No `pages/` directory — App Router only.
+
+### Media cards & file upload
+- Card types `image`, `gif`, `audio`, `file` created via `CardPalette` file picker or canvas drop import.
+- Upload flow: `CardPalette.handleFileChosen` → `createCardAsync` (optimistic card) → `uploadCardAttachment` (XHR + progress) → `updateCard` (attach attachment_id).
+- Progress state persisted in card's `content: { status: "uploading" | "ready" | "error", progress: 0–100 }`.
+- Failure → retry button overlay in CardShell; click to retry upload (new file picker or same file).
+- See `lib/api/CLAUDE.md` for upload pipeline detail.

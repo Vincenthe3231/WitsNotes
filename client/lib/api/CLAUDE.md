@@ -61,3 +61,22 @@ Server returns 409 if stale. `onError` in defaults handles 409: refetch + dispat
 - Write throttle: 300 ms (debounced on burst)
 - Debug logs at `console.debug` level — prefix `[idb]`
 - Do NOT change the throttle above 500 ms — paused mutations need to reach IDB before hard reload
+
+## File Upload Pipeline
+
+**`uploadAttachment(file, { cardId, onProgress })`** in `boards.ts`:
+- XHR to `POST /api/proxy/attachments` with FormData (`file` + `card_id`)
+- 30s timeout; progress via `upload.onprogress` event
+- Returns `{ id, url, mime, size, original_name }` on 200/201
+- Error handlers: `onerror`, `ontimeout`, `onabort` all reject with descriptive messages
+
+**`uploadCardAttachment(opts)`** in `uploadCardAttachment.ts`:
+- Shared helper: create card (optimistic) → upload file → update card with attachment
+- Orchestrates: `createCardAsync` → `uploadAttachment` → `updateCard` mutation
+- State progression: `status: "uploading"` (0%) → progress % → `status: "ready"` (on success) or `status: "error"` (on fail)
+- Failure path: rolls back card state to error, client can retry via CardShell overlay
+
+**CardShell media retry:**
+- Shows retry button overlay when `status: "error"`
+- Clicking retry opens file picker; selecting new file calls `uploadCardAttachment` again
+- Progress persists optimistically in local store during upload

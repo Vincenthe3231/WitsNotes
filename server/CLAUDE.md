@@ -32,7 +32,7 @@ php artisan test tests/Feature/Foo.php       # single file
 php artisan test tests/Feature/             # entire Feature suite
 ```
 
-Tests use an in-memory SQLite DB (`<env name="DB_CONNECTION" value="sqlite">` in `phpunit.xml`) — separate from dev PostgreSQL.
+Tests use PostgreSQL test DB (`pgsql` in `phpunit.xml`) — separate from dev; `docker compose up -d postgres` required.
 
 ## Directory Map
 

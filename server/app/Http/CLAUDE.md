@@ -57,5 +57,24 @@ if ($request->has('base_updated_at')) {
 | `Controllers/BoardController.php` | CRUD for boards |
 | `Controllers/CardController.php` | CRUD for cards + conflict guard |
 | `Controllers/AuthController.php` | login, logout, me |
-| `Controllers/AttachmentController.php` | File upload → storage |
+| `Controllers/AttachmentController.php` | File upload → R2; store/show/destroy |
 | `Middleware/` | Auth + Sanctum SPA middleware |
+
+### AttachmentController::store
+
+Accepts multipart `POST /api/attachments` with `file` + `card_id`.  
+Stores file to Cloudflare R2 (configured in `config/attachments.php`).  
+Returns `{ id, url, mime, size, original_name }` — client uses to populate card's attachment_id + content.
+
+```php
+$path = $request->file('file')->store('attachments', 'r2');
+$att = Attachment::create([
+    'card_id' => $request->input('card_id'),
+    'disk' => 'r2',
+    'path' => $path,
+    'mime' => $file->getMimeType(),
+    'size' => $file->getSize(),
+    'original_name' => $file->getClientOriginalName(),
+]);
+return response()->json($att);
+```
