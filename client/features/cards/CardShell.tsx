@@ -1,7 +1,7 @@
 "use client";
 
-import { memo, useCallback, useState } from "react";
-import { GripVertical, Trash2, ExternalLink, Lock } from "lucide-react";
+import { memo, useCallback, useState, useRef } from "react";
+import { GripVertical, Trash2, ExternalLink, Lock, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUpdateCard, useDeleteCard } from "@/lib/api/hooks";
@@ -9,15 +9,39 @@ import { Card, NotebookTab } from "@/lib/api/schemas";
 import { flatten } from "@/lib/notebook/tree";
 import { useCardDrag } from "@/features/canvas/useCardDrag";
 import { useCardResize, ResizeHandle } from "@/features/canvas/useCardResize";
+import { FC } from "react";
+import { CardType } from "@/lib/api/schemas";
 import { NotebookCard } from "./NotebookCard";
 import { TodoCard } from "./TodoCard";
 import { BookmarkCard } from "./BookmarkCard";
 import { LinksListCard } from "./LinksListCard";
+import { ImageCard } from "./ImageCard";
+import { GifCard } from "./GifCard";
+import { AudioCard } from "./AudioCard";
+import { FileCard } from "./FileCard";
+import { uploadCardAttachment } from "@/lib/api/uploadCardAttachment";
+
+type CardRendererProps = { card: Card; boardId: string };
+
+const CARD_RENDERERS: Partial<Record<CardType, FC<CardRendererProps>>> = {
+  note:      NotebookCard,
+  notebook:  NotebookCard,
+  todo:      TodoCard,
+  task:      TodoCard,
+  bookmark:  BookmarkCard,
+  link_list: LinksListCard,
+  image:     ({ card }) => <ImageCard card={card} />,
+  gif:       ({ card }) => <GifCard card={card} />,
+  audio:     ({ card }) => <AudioCard card={card} />,
+  file:      ({ card }) => <FileCard card={card} />,
+};
 
 interface Props {
   card: Card;
   boardId: string;
 }
+
+const MEDIA_CARD_TYPES = new Set<CardType>(["image", "gif", "audio", "file"]);
 
 const CORNER_HANDLES: { handle: ResizeHandle; style: React.CSSProperties; cursor: string }[] = [
   { handle: "nw", style: { top: -7, left: -7 },     cursor: "nwse-resize" },
@@ -61,9 +85,13 @@ function CardShellInner({ card, boardId }: Props) {
   const removeLocalCard = useCanvasStore((s) => s.removeLocalCard);
   const { mutate: updateCard } = useUpdateCard();
   const { mutate: deleteCard } = useDeleteCard();
+  const retryInputRef = useRef<HTMLInputElement>(null);
 
   const isSelected = selectedIds.has(card.id);
   const isNotebook = card.type === "notebook";
+  const cardContent = card.content as { status?: string } | null;
+  const showRetry = MEDIA_CARD_TYPES.has(card.type) && cardContent?.status === "error";
+  const retryAccept = card.type === "audio" ? "audio/*" : card.type === "image" || card.type === "gif" ? "image/*" : "*/*";
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(card.title ?? "");
@@ -93,8 +121,23 @@ function CardShellInner({ card, boardId }: Props) {
     [boardId, card, upsertLocalCard, updateCard]
   );
 
+  const handleGroupMoveEnd = useCallback(
+    (_draggedId: string, dx: number, dy: number) => {
+      const { selectedIds: sel, localCards } = useCanvasStore.getState();
+      sel.forEach((id) => {
+        const c = localCards.get(id);
+        if (!c) return;
+        const nx = c.x + dx;
+        const ny = c.y + dy;
+        upsertLocalCard({ ...c, x: nx, y: ny });
+        updateCard({ boardId, id, input: { x: nx, y: ny } });
+      });
+    },
+    [boardId, upsertLocalCard, updateCard]
+  );
+
   const { onPointerDown: onDragDown, onPointerMove: onDragMove, onPointerUp: onDragUp } =
-    useCardDrag(card, handleMoveEnd);
+    useCardDrag(card, handleMoveEnd, handleGroupMoveEnd);
 
   const { onPointerDown: onResizeDown, onPointerMove: onResizeMove, onPointerUp: onResizeUp } =
     useCardResize(card, handleResizeEnd);
@@ -225,17 +268,45 @@ function CardShellInner({ card, boardId }: Props) {
       </div>
 
       {/* Card content */}
-      <div style={{ height: "calc(100% - 28px)", overflow: "hidden" }}>
-        {(card.type === "note" || card.type === "notebook") && <NotebookCard card={card} boardId={boardId} />}
-        {(card.type === "todo" || card.type === "task") && <TodoCard card={card} boardId={boardId} />}
-        {card.type === "bookmark" && <BookmarkCard card={card} boardId={boardId} />}
-        {card.type === "link_list" && <LinksListCard card={card} boardId={boardId} />}
-        {!["note", "notebook", "todo", "task", "bookmark", "link_list"].includes(card.type) && (
-          <NotebookCard card={card} boardId={boardId} />
+      <div style={{ height: "calc(100% - 28px)", overflow: "hidden", position: "relative" }}>
+        {(() => {
+          const Renderer = CARD_RENDERERS[card.type] ?? NotebookCard;
+          return <Renderer card={card} boardId={boardId} />;
+        })()}
+        {showRetry && (
+          <button
+            onClick={(e) => { e.stopPropagation(); retryInputRef.current?.click(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)",
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "4px 12px", borderRadius: 8,
+              background: "var(--color-primary)", color: "#fff",
+              border: "none", cursor: "pointer", fontSize: 12, fontWeight: 500, zIndex: 10,
+            }}
+            aria-label="Retry upload"
+          >
+            <RefreshCw size={11} />
+            Retry
+          </button>
         )}
       </div>
 
       </div>
+
+      <input
+        ref={retryInputRef}
+        type="file"
+        accept={retryAccept}
+        style={{ display: "none" }}
+        aria-hidden
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          e.target.value = "";
+          await uploadCardAttachment({ boardId, card, file, upsertLocalCard, updateCard: (vars) => updateCard(vars) });
+        }}
+      />
 
       {/* Corner-only L-bracket resize handles — outside clip div so overflow:hidden doesn't cut them */}
       {isSelected && CORNER_HANDLES.map(({ handle, style, cursor }) => (

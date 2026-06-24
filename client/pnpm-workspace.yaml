@@ -1,8 +1,10 @@
 allowBuilds:
   bson: set this to true or false
+  esbuild: true
   kerberos: set this to true or false
   sharp: true
   unrs-resolver: true
+  workerd: true
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver

@@ -11,7 +11,9 @@ docker compose up -d postgres redis   # must be running before artisan commands
 ## Commands
 
 ```bash
-php artisan serve              # dev server — localhost:8000
+# File uploads require PHP ini overrides — default upload_max_filesize=2M rejects typical screenshots
+php -d upload_max_filesize=50M -d post_max_size=60M artisan serve   # recommended
+php artisan serve              # dev server — localhost:8000 (2MB upload limit)
 php artisan migrate            # run pending migrations
 php artisan migrate:fresh      # drop all + re-migrate (dev only)
 php artisan migrate:rollback   # undo last batch

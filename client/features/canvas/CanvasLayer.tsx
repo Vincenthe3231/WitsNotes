@@ -5,19 +5,35 @@ import { useCanvasStore } from "@/stores/canvasStore";
 import { Card } from "@/lib/api/schemas";
 import { CardShell } from "@/features/cards/CardShell";
 
-const VIEWPORT_MARGIN = 200; // px extra culling buffer
+const VIEWPORT_MARGIN = 200;
 
 interface Props {
   cards: Card[];
   boardId: string;
 }
 
+export function cullCards(
+  merged: Card[],
+  viewport: { x: number; y: number; scale: number },
+  vw: number,
+  vh: number,
+  margin = VIEWPORT_MARGIN
+) {
+  const left   = (-viewport.x - margin) / viewport.scale;
+  const top    = (-viewport.y - margin) / viewport.scale;
+  const right  = (vw - viewport.x + margin) / viewport.scale;
+  const bottom = (vh - viewport.y + margin) / viewport.scale;
+  return merged.filter(
+    (c) => c.x + c.w >= left && c.x <= right && c.y + c.h >= top && c.y <= bottom
+  );
+}
+
 export function CanvasLayer({ cards, boardId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewport = useCanvasStore((s) => s.viewport);
   const localCards = useCanvasStore((s) => s.localCards);
+  const marquee = useCanvasStore((s) => s.marquee);
 
-  // Merge: server cards + local overrides + optimistic-only cards not yet in server response
   const merged = useMemo(() => {
     const map = new Map(cards.map((c) => [c.id, localCards.get(c.id) ?? c]));
     for (const [id, card] of localCards.entries()) {
@@ -26,27 +42,14 @@ export function CanvasLayer({ cards, boardId }: Props) {
     return Array.from(map.values());
   }, [cards, localCards]);
 
-  // Viewport culling — only render cards within visible bounds + margin
   const visible = useMemo(() => {
-    const vw = (typeof window !== "undefined" ? window.innerWidth : 1440);
-    const vh = (typeof window !== "undefined" ? window.innerHeight : 900);
-    const left   = (-viewport.x - VIEWPORT_MARGIN) / viewport.scale;
-    const top    = (-viewport.y - VIEWPORT_MARGIN) / viewport.scale;
-    const right  = (vw - viewport.x + VIEWPORT_MARGIN) / viewport.scale;
-    const bottom = (vh - viewport.y + VIEWPORT_MARGIN) / viewport.scale;
-
-    return merged.filter(
-      (c) => c.x + c.w >= left && c.x <= right && c.y + c.h >= top && c.y <= bottom
-    );
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1440;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 900;
+    return cullCards(merged, viewport, vw, vh);
   }, [merged, viewport]);
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 overflow-hidden"
-      aria-label="Canvas"
-    >
-      {/* Single GPU-composited transform wrapper */}
+    <div ref={containerRef} className="absolute inset-0 overflow-hidden" aria-label="Canvas">
       <div
         style={{
           position: "absolute",
@@ -60,6 +63,24 @@ export function CanvasLayer({ cards, boardId }: Props) {
         {visible.map((card) => (
           <CardShell key={card.id} card={card} boardId={boardId} />
         ))}
+
+        {/* Marquee overlay rect */}
+        {marquee && marquee.w > 4 && marquee.h > 4 && (
+          <div
+            style={{
+              position: "absolute",
+              left: marquee.x,
+              top: marquee.y,
+              width: marquee.w,
+              height: marquee.h,
+              border: "1.5px solid var(--color-primary)",
+              background: "rgba(var(--color-primary-rgb, 99,102,241), 0.08)",
+              borderRadius: 4,
+              pointerEvents: "none",
+            }}
+            aria-hidden
+          />
+        )}
       </div>
     </div>
   );

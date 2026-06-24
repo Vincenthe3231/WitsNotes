@@ -60,6 +60,42 @@ return [
             'report' => false,
         ],
 
+        'r2_image' => [
+            'driver'                  => 's3',
+            'key'                     => env('CF_S3_ACCESS_KEY_ID'),
+            'secret'                  => env('CF_S3_SECRET_ACCESS_KEY'),
+            'region'                  => env('CF_S3_REGION', 'auto'),
+            'bucket'                  => env('CF_S3_IMAGE_BUCKET'),
+            'endpoint'                => env('CF_S3_ENDPOINT'),
+            'url'                     => env('CF_S3_PUBLIC_URL'),
+            'use_path_style_endpoint' => true,
+            'throw'                   => true,
+        ],
+
+        'r2_file' => [
+            'driver'                  => 's3',
+            'key'                     => env('CF_S3_ACCESS_KEY_ID'),
+            'secret'                  => env('CF_S3_SECRET_ACCESS_KEY'),
+            'region'                  => env('CF_S3_REGION', 'auto'),
+            'bucket'                  => env('CF_S3_FILE_BUCKET'),
+            'endpoint'                => env('CF_S3_ENDPOINT'),
+            'url'                     => env('CF_S3_PUBLIC_URL'),
+            'use_path_style_endpoint' => true,
+            'throw'                   => true,
+        ],
+
+        'r2_audio' => [
+            'driver'                  => 's3',
+            'key'                     => env('CF_S3_ACCESS_KEY_ID'),
+            'secret'                  => env('CF_S3_SECRET_ACCESS_KEY'),
+            'region'                  => env('CF_S3_REGION', 'auto'),
+            'bucket'                  => env('CF_S3_AUDIO_BUCKET'),
+            'endpoint'                => env('CF_S3_ENDPOINT'),
+            'url'                     => env('CF_S3_PUBLIC_URL'),
+            'use_path_style_endpoint' => true,
+            'throw'                   => true,
+        ],
+
     ],
 
     /*

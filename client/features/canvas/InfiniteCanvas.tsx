@@ -1,10 +1,15 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useCanvasPointer } from "./useCanvasPointer";
 import { CanvasLayer } from "./CanvasLayer";
 import { Card } from "@/lib/api/schemas";
 import { CardPalette } from "@/features/cards/CardPalette";
+import { GroupToolbar } from "./GroupToolbar";
+import { useCanvasDropImport } from "./useCanvasDropImport";
+import { useMarqueeSelect } from "./useMarqueeSelect";
+import { useCanvasKeyboard } from "./useCanvasKeyboard";
+import { ShortcutsModal } from "@/components/ui/ShortcutsModal";
 
 interface Props {
   cards: Card[];
@@ -13,9 +18,17 @@ interface Props {
 
 export function InfiniteCanvas({ cards, boardId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [showCheatsheet, setShowCheatsheet] = useState(false);
 
-  const { onPointerDown, onPointerMove, onPointerUp } =
-    useCanvasPointer(containerRef);
+  const marqueeHandlers = useMarqueeSelect(cards);
+  const { onPointerDown, onPointerMove, onPointerUp } = useCanvasPointer(containerRef, marqueeHandlers);
+  const { onDragOver, onDrop } = useCanvasDropImport(boardId);
+
+  useCanvasKeyboard({
+    boardId,
+    cards,
+    onOpenCheatsheet: () => setShowCheatsheet(true),
+  });
 
   return (
     <div className="relative flex-1 overflow-hidden" style={{ touchAction: "none" }}>
@@ -27,13 +40,21 @@ export function InfiniteCanvas({ cards, boardId }: Props) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        aria-label="Infinite canvas — drag to pan, scroll to zoom"
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        aria-label="Infinite canvas — drag to pan, scroll to zoom, Shift+drag to select, drop files to import"
       >
         <CanvasLayer cards={cards} boardId={boardId} />
       </div>
 
+      {/* Group selection toolbar */}
+      <GroupToolbar boardId={boardId} cards={cards} />
+
       {/* Floating card creation palette */}
       <CardPalette boardId={boardId} />
+
+      {/* Shortcuts cheatsheet */}
+      {showCheatsheet && <ShortcutsModal onClose={() => setShowCheatsheet(false)} />}
     </div>
   );
 }

@@ -1,210 +1,124 @@
-# Phase 2 — Offline-first PWA (detailed plan)
+# Fix: Attachment upload stuck at "Uploading… 0%" forever
 
 ## Context
 
-`PLAN.md` Phase 2 ("Offline-first PWA") is currently a vague bullet list. Only the
-Serwist asset cache is done; reads/writes do **not** survive offline, the PWA is
-**not installable** (manifest references missing icons), and there is no sync feedback.
-This plan turns Phase 2 into an executable spec on the existing `feat/offline-PWA` branch.
+Dropping/adding a file (image/audio/file) creates a card with `content.status = "uploading"`,
+then uploads the file, then PATCHes the card to `status: "ready"`. In practice the card stays
+`{status:"uploading", progress:0}` permanently — survives page refresh / hard refresh because the
+**database row was never advanced past the initial `uploading` state**.
 
-**Codegraph findings that shape the design:**
-- **Proxy auth is the offline pivot.** `apiClient` (axios, `client/lib/api/client.ts`)
-  calls `/api/proxy/[...path]` — a Next **server** route handler
-  (`client/app/api/proxy/[...path]/route.ts`) that reads the httpOnly `wn_sid` cookie
-  and forwards a Bearer token to Laravel. JS never sees the token; the browser
-  auto-attaches the cookie on replay. ⇒ Offline **reads must come from client-side
-  IndexedDB (react-query persistence)**, not the route handler (which is unreachable offline).
-- `client/app/providers.tsx` uses a plain `QueryClientProvider` — no persistence
-  (`gcTime` default 5 min ⇒ cache is GC'd, nothing survives reload).
-- `client/lib/api/hooks.ts`: create-board/create-card have optimistic `onMutate`
-  (snapshot + rollback). **`useUpdateCard` / `useDeleteCard` are invalidate-only** — no
-  optimistic cache write, so a persisted cache would not reflect offline moves/deletes.
-- Canvas renders server cards (react-query) **merged** with `localCards` (zustand `Map`,
-  in-memory only) in `client/features/canvas/CanvasLayer.tsx:21`. `localCards` is lost on
-  reload — the persisted **query cache** must be the durable source after reload.
-- `client/public/manifest.json` exists and is wired (`layout.tsx` metadata) but
-  `public/icons/icon-192.png` / `icon-512.png` **do not exist** ⇒ install fails.
-- `client/app/sw.ts` is minimal Serwist (precache + `defaultCache`),
-  `disable: NODE_ENV !== "production"` ⇒ SW only runs in a production build. No offline
-  fallback page, no install prompt, no sync-status UI.
-- Not installed: `@tanstack/react-query-persist-client`, persister, `idb-keyval`, `yjs`.
+### Root cause (high confidence)
 
-**Decisions (confirmed with user):**
-1. **Sync engine = TanStack persist + paused-mutation replay.** Reuse existing optimistic
-   hooks; no CRDT. **Yjs is deferred to Phase 3 (collab)** — single-user offline does not
-   need it.
-2. **Conflict policy = `updated_at` guard.** Client sends the base `updated_at`; server
-   returns `409` on stale; client refetches + surfaces a conflict toast. (Only server change.)
-3. **Full PWA polish** — generate icons, install prompt, offline fallback page,
-   sync-status `aria-live` indicator, Lighthouse PWA pass.
+The upload `POST /api/proxy/attachments` **hangs and never returns**, so neither the success
+(`status:"ready"`) nor the catch (`status:"error"`) branch of `handleFile` ever runs. The user
+refreshes repeatedly, killing the in-flight `XMLHttpRequest` each time, so the card is frozen at
+`uploading` in the DB forever.
 
-Outcome: open a board online, go offline, drag/edit/create/delete cards, **reload while
-offline** (data + edits intact), reconnect → queued edits replay with conflict-safe
-`updated_at` guard; app is installable and passes Lighthouse PWA.
+Why it hangs: `client/app/api/proxy/[...path]/route.ts` forwards multipart uploads by **buffering
+the whole body** (`body = await request.arrayBuffer()`) and re-`fetch()`-ing it to Laravel. This is
+the exact pattern that hangs on Next.js App Router route handlers for request bodies above
+~64–100 kB, driven by:
+- Node ≥ 20.4.0 undici body-forwarding regression — Next issue [#52616](https://github.com/vercel/next.js/issues/52616), [#64002](https://github.com/vercel/next.js/issues/64002).
+- **Turbopack is the default dev bundler in Next 16** (`next dev`, no flag) and partially consumes the
+  multipart stream before the handler runs — the proxy comment already documents this. Switching
+  `formData()` → `arrayBuffer()` did NOT fix it because `arrayBuffer()` reads the same broken stream.
 
----
+`AxioSpark.png` (image, >100 kB) is over the threshold → hang. Small files would pass.
 
-## Workstream 1 — Offline reads (query persistence)
+### Ruled out (evidence)
 
-**Dependency choice (revised — avoid the questioned `*-storage-persister` packages).**
-`@tanstack/query-async-storage-persister` is not formally deprecated, but the maintained
-modern path is per-query `experimental_createPersister`. However, `experimental_createPersister`
-persists **queries only — not paused mutations**, and WS2 (offline write replay across
-reload) needs mutation persistence. So use the whole-client
-**`@tanstack/react-query-persist-client`** (`PersistQueryClientProvider`, persists queries +
-mutations) with a **hand-rolled `Persister`** over `idb-keyval` — dropping
-`@tanstack/query-async-storage-persister` entirely.
+- **Disk/R2 misconfig** (`config/attachments.php` defaults to `public`; `r2_*` disks have `throw=true`):
+  would make `store()` throw → 500 → catch branch → card shows `status:"error"` ("Upload failed").
+  Card shows `uploading`, not `error` → not this.
+- **409 conflict guard** (`CardController::update`): the ready-update's `base_updated_at` matches the
+  freshly-created card's `updated_at` (or is `undefined` while optimistic temp card is in cache →
+  guard skipped). Not a persistent cause.
+- The PATCH returning `uploading` content in the DevTools screenshot is a **card-drag position
+  update** echoing the unchanged `content`, not the attachment-complete update.
 
-New deps (in `client/`): `@tanstack/react-query-persist-client`, `idb-keyval`
-(or raw `idb` if avoiding idb-keyval; no `*-storage-persister` package).
+## Fix
 
-- **`client/lib/api/persister.ts`** (new) — implement the `Persister` interface directly
-  (the documented custom-persister escape hatch):
-  ```ts
-  import { get, set, del } from "idb-keyval";
-  import type { Persister, PersistedClient } from "@tanstack/react-query-persist-client";
-  const KEY = "witsnote-rq";
-  export const idbPersister: Persister = {
-    persistClient: (c: PersistedClient) => set(KEY, c),   // structured-clone, no JSON
-    restoreClient: () => get<PersistedClient>(KEY),
-    removeClient: () => del(KEY),
-  };
-  ```
-  (IndexedDB, not localStorage — board/card payloads exceed the ~5 MB localStorage cap.)
-  Optional throttle on `persistClient` (~1 s) to avoid thrashing during drag bursts.
-- **`client/app/providers.tsx`** — edit:
-  - QueryClient defaults: add `gcTime: 1000 * 60 * 60 * 24 * 7` (7 d) so cached
-    boards/cards survive past `staleTime`; keep `staleTime: 60_000`, `retry: 1`.
-  - Replace `QueryClientProvider` with **`PersistQueryClientProvider`**, passing
-    `persistOptions={{ persister: idbPersister, maxAge: 7d, buster: <pkg version>,
-    dehydrateOptions: { shouldDehydrateMutation: () => true } }}` and
-    `onSuccess={() => queryClient.resumePausedMutations()}`.
-  - Keep `CommandPalette` + `ReactQueryDevtools` children.
+### 1. Proxy — stream the body instead of buffering (root cause)
 
-Result: `useBoards` / `useBoard` (`hooks.ts`) restore from IndexedDB on cold load — no
-network needed. The proxy route handler is bypassed for offline reads. SW does **not** need
-to cache `/api/proxy` GETs (persistence covers data); SW only handles the app shell.
+`client/app/api/proxy/[...path]/route.ts`
 
-## Workstream 2 — Offline writes (rehydratable optimistic mutations + replay)
+- For non-GET/HEAD, forward `request.body` (a `ReadableStream`) **directly** to upstream `fetch`
+  with `duplex: "half"`. Next 16's fetch supports duplex streaming natively — no buffering.
+- Keep the original `content-type` (with multipart boundary) intact. Do not re-read/re-encode.
+- Drop the `arrayBuffer()` branch and the `body instanceof ReadableStream` conditional for duplex
+  (always set `duplex:"half"` when a stream body is present).
+- Leave the IPv4 note: `UPSTREAM` already uses `localhost` — fine since other proxied calls work.
 
-react-query pauses mutations while offline; to resume them **after a reload**, the
-mutation fns must be rehydratable via `setMutationDefaults` (a closure cannot be persisted).
+Representative shape:
+```ts
+let body: BodyInit | null = null;
+const init: RequestInit & { duplex?: "half" } = { method: request.method, headers: forwardHeaders };
+if (!["GET", "HEAD"].includes(request.method)) {
+  body = request.body;            // ReadableStream — no buffering
+  init.body = body;
+  init.duplex = "half";
+}
+const upstream = await fetch(upstreamUrl, init);
+```
 
-- **`client/lib/api/hooks.ts`** — refactor card mutations:
-  - Add a `registerMutationDefaults(qc)` that calls `qc.setMutationDefaults` for stable
-    keys: `["cards","create"]`, `["cards","update"]`, `["cards","delete"]` (and board
-    equivalents). Move `mutationFn` + `onMutate`/`onError`/`onSettled` into the defaults.
-  - **Carry `boardId` in mutation *variables*, not the key**, so one default serves every
-    board and survives reload: e.g. update variables become `{ boardId, id, input }`;
-    default `onSettled` invalidates `boardKeys.detail(variables.boardId)`.
-  - `useUpdateCard` / `useDeleteCard` / `useCreateCard` reduce to
-    `useMutation({ mutationKey })` (config lives in defaults).
-  - Call `registerMutationDefaults(queryClient)` once in `providers.tsx` (before persist
-    restore).
-- **Add optimistic cache writes to update + delete** (today they only invalidate):
-  mirror `useCreateCard`'s pattern — `onMutate` snapshots `boardKeys.detail(boardId)`,
-  patches the `cards` array (move/resize/title fields, or removes the card), `onError`
-  rolls back. This is what makes offline moves/deletes **persist across reload** (the
-  patched cache is dehydrated to IndexedDB). zustand `localCards`
-  (`CardShell.tsx` handlers) stays for in-drag smoothness only.
-- Keep `networkMode: "online"` (default) so offline mutations pause. react-query
-  auto-resumes paused mutations when `onlineManager` flips online mid-session;
-  `resumePausedMutations()` (WS1 `onSuccess`) covers the post-reload case.
+- If streaming still hangs under Turbopack on this machine, the fallback lever is
+  `next dev --webpack` (Next 16 opt-out). Capture this in `client/CLAUDE.md` rather than changing
+  the default — verify streaming first.
 
-## Workstream 3 — `updated_at` conflict guard (only server change)
+### 2. Frontend resilience — never freeze on `uploading`
 
-- **Client** — `client/lib/api/boards.ts` `updateCard()`: include
-  `base_updated_at` (the cached card's `updated_at`) in the PATCH body. On `409`,
-  the mutation `onError` refetches `boardKeys.detail(boardId)`, clears the stale zustand
-  `localCards` entry, and pushes a conflict toast (WS4 sync-status, `aria-live`).
-- **Server** — `server/app/Http/Controllers/CardController.php` `update()`: if
-  `base_updated_at` present and `!= $card->updated_at`, return
-  `response()->json($freshCard, 409)`; otherwise apply. Last-write-wins fallback when the
-  field is absent. (No migration — `updated_at` already exists.)
-- **Test** — `server/tests/Feature/CardConflictTest.php` (Pest): stale `base_updated_at`
-  ⇒ 409 + fresh card; matching ⇒ 200 + applied.
+`client/features/cards/CardPalette.tsx` (`handleFileChosen`) and
+`client/features/canvas/useCanvasDropImport.ts` (`handleFile`) share the identical flow.
 
-## Workstream 4 — PWA install / offline polish
+- The `catch` already sets `status:"error"` + PATCHes it — keep. The real gap is the **hang** (no
+  reject fires). `uploadAttachment` already sets `xhr.timeout = 60_000` → `ontimeout` rejects → catch
+  runs. Confirm the catch's `updateCard({... status:"error"})` reliably persists so a stuck upload
+  self-heals to "error" after 60 s instead of frozen `uploading`.
+- Add a retry affordance: in the `error` branch of `ImageCard` / `FileCard` / `AudioCard`
+  (`status === "error"`), render a "Retry" button that re-runs the upload for that card.
+- Consider lowering `xhr.timeout` (e.g. 30 s) so failures surface faster.
+- Factor the duplicated create→upload→update flow into one shared helper (e.g.
+  `client/lib/api/uploadCardAttachment.ts`) so both call sites stay in sync. Reuse existing
+  `uploadAttachment` (`client/lib/api/boards.ts:65`) and `useUpdateCard` (`client/lib/api/hooks.ts:204`).
 
-- **Icons** — add `client/public/icons/icon.svg` (teal `#0D9488` "W" glyph on
-  `#0B1220`) + generate maskable `icon-192.png` / `icon-512.png` via a one-off
-  `client/scripts/gen-icons.mjs` (`sharp`, devDep) rasterizing the SVG at 192/512 with
-  safe-zone padding. Closes the manifest gap.
-- **Offline fallback** — `client/app/~offline/page.tsx` (static "You're offline" shell);
-  in `client/app/sw.ts` add Serwist `fallbacks: { entries: [{ url: "/~offline",
-  matcher: ({ request }) => request.destination === "document" }] }` and ensure `/~offline`
-  is precached.
-- **Install prompt** — `client/components/ui/InstallPrompt.tsx`: capture
-  `beforeinstallprompt`, stash the deferred event, render a neumorphic "Install" button in
-  `Topbar`; hide once `appinstalled` / `display-mode: standalone`.
-- **Sync-status indicator** — `client/components/ui/SyncStatus.tsx`: subscribe to
-  `onlineManager` + count paused/pending mutations (`useMutationState` /
-  `useIsMutating`), render "Offline · N pending" / "Syncing…" / "Synced" with
-  `aria-live="polite"`. Mount in `Topbar`. Doubles as the WS3 conflict-toast host.
-- **manifest/layout** — already correct; verify `icons` paths resolve after generation.
+### 3. Tests
 
-## Workstream 5 — Tests (offline logic only; full backfill stays cross-cutting)
-
-- Add Vitest + RTL config to `client/` (none today): `vitest.config.ts`, `jsdom` env.
-- Unit: persister round-trip (`persister.ts`); update/delete `onMutate` optimistic patch +
-  rollback; 409 conflict `onError` reducer.
-- Pest: `CardConflictTest` (WS3).
-
----
+- **Server** — extend `server/tests/Feature/AttachmentTest.php`: assert `POST /api/attachments`
+  with `UploadedFile::fake()->image()` returns 201 + creates the `Attachment` row (use the `public`
+  disk via `Storage::fake`). This locks the backend contract the proxy depends on.
+- **Client** — add a `vitest` test (config already at `client/vitest.config.ts`) for
+  `uploadAttachment`: mock `XMLHttpRequest`, assert it resolves on 201 and rejects on timeout/error.
+  Optionally a route-handler test that a multipart POST forwards body + Bearer to upstream.
 
 ## Critical files
 
-| File | Change |
-|------|--------|
-| `client/app/providers.tsx` | PersistQueryClientProvider + gcTime + register defaults |
-| `client/lib/api/persister.ts` | **new** custom `Persister` over idb-keyval (no `*-storage-persister` pkg) |
-| `client/lib/api/hooks.ts` | setMutationDefaults, optimistic update/delete, boardId-in-vars |
-| `client/lib/api/boards.ts` | `updateCard` sends `base_updated_at` |
-| `server/app/Http/Controllers/CardController.php` | `update()` 409 on stale `updated_at` |
-| `client/app/sw.ts` | offline `fallbacks` |
-| `client/app/~offline/page.tsx` | **new** offline shell |
-| `client/public/icons/*` + `client/scripts/gen-icons.mjs` | **new** maskable icons |
-| `client/components/ui/{InstallPrompt,SyncStatus}.tsx` | **new** install + sync UI |
+- `client/app/api/proxy/[...path]/route.ts` — proxy streaming fix (primary)
+- `client/features/cards/CardPalette.tsx` — upload flow + retry
+- `client/features/canvas/useCanvasDropImport.ts` — upload flow (dedupe)
+- `client/lib/api/boards.ts` — `uploadAttachment` (timeout tweak)
+- `client/features/cards/{ImageCard,FileCard,AudioCard,GifCard}.tsx` — error/retry UI
+- `server/tests/Feature/AttachmentTest.php`, `client/vitest.config.ts` (+ new client test)
 
-## Reuse (don't reinvent)
-- Optimistic pattern: copy `useCreateCard` `onMutate`/`onError`/`onSettled`
-  (`hooks.ts:79`) for update/delete.
-- Merge/cull already handle extra/optimistic cards (`CanvasLayer.tsx:21`) — no canvas
-  render change needed.
-- `useHydrated` (`client/hooks/useHydrated.ts`) for SSR-safe online/standalone checks.
-- Topbar already exists — mount Install + SyncStatus there.
+## Verification (do this FIRST to confirm root cause)
 
-## Verification (SW only runs in a production build — `disable: NODE_ENV !== "production"`)
-1. `cd client && pnpm build && pnpm start` (server: `docker compose up -d postgres redis`,
-   `php artisan serve`).
-2. Online: open a board, add/move/edit/delete cards.
-3. DevTools → Network **Offline**: drag/edit/create/delete → UI updates; **reload** → data
-   + edits intact (from IndexedDB); navigate to a new route → `/~offline` fallback.
-4. Back **Online**: paused mutations replay; SyncStatus → "Synced"; confirm server state via
-   `GET /api/boards/{id}`.
-5. Conflict: edit same card on a 2nd device, then replay a stale edit → 409 → conflict
-   toast + refetch.
-6. `pnpm test` (Vitest) + `php artisan test --filter=CardConflict`.
-7. Lighthouse → PWA: **installable** + **offline-capable**; verify install prompt and
-   maskable icons.
+1. **Confirm the hang location.** Start Laravel (`php -d upload_max_filesize=50M -d post_max_size=60M
+   artisan serve`) and Next (`pnpm dev`). Upload an image > 100 kB. Watch the Laravel console /
+   `storage/logs/laravel.log`:
+   - POST `/api/attachments` **never arrives** → confirms proxy body-forwarding hang (this plan).
+   - Arrives + returns 201 but client stuck → re-investigate response/409 path instead.
+2. Apply the proxy streaming fix. Re-upload the same image:
+   - Network: `POST /api/proxy/attachments` returns 201 within ~1 s.
+   - Card flips `uploading → ready`, image renders.
+   - DB: `cards.content.status = "ready"` with `attachment_id`/`url`. Survives hard refresh.
+3. Force-fail path: stop Laravel mid-upload (or point disk at bad R2 creds) → card lands on
+   `error` with a working **Retry**, never frozen `uploading`.
+4. `cd client && pnpm lint && pnpm test`; `cd server && php artisan test --filter=Attachment`.
+5. If streaming hangs under Turbopack, retry with `next dev --webpack` to isolate the bundler, then
+   document.
 
-## Risks / notes
-- **php-pro surface is tiny** — Phase 2 is ~95% frontend; the only server change is the
-  `CardController::update` 409 guard.
-- **Move-mutation volume**: each drag-end queues one `update`; offline bursts replay in
-  order (last-write-wins server-side ⇒ final state correct). Acceptable for single-user;
-  Yjs in P3 collapses this to final state.
-- **Mutation rehydration**: paused mutations only resume post-reload if registered via
-  `setMutationDefaults` with serializable variables — keep `content`/`style` JSON-safe.
-- **`buster`**: bump on cache-shape changes to discard stale persisted caches.
-- Still zero pre-existing tests (`PLAN.md` cross-cutting debt) — scope here to offline
-  logic; broader backfill continues per phase.
-- **Persister dep**: do **not** add `@tanstack/query-async-storage-persister` /
-  `createAsyncStoragePersister` — use the hand-rolled `idbPersister` (WS1).
-  `experimental_createPersister` is queries-only and cannot carry paused-mutation replay.
-- **Yjs (P3, not this phase) — singleton pattern.** When Yjs lands in Phase 3, enforce a
-  single `Y.Doc` per board via a module-level registry (e.g.
-  `const docs = new Map<boardId, Y.Doc>()`), and a single `y-indexeddb`/provider instance
-  per doc. Never construct `Y.Doc`/providers inside React render — create lazily in the
-  registry and reuse across re-renders + HMR to avoid duplicate docs and double-applied
-  updates. Tear down the provider on board unmount.
+## Sources
+
+- Next.js #52616 — fetch + formData in route handler never returns >100 kB (Node 20.4.0): https://github.com/vercel/next.js/issues/52616
+- Next.js #64002 — route handler stuck on `await request.formData()`: https://github.com/vercel/next.js/issues/64002
+- Next.js 16 duplex streaming proxy pattern: https://learnwebcraft.com/learn/nextjs/nextjs-16-proxy-ts-changes-everything
+- Next.js 16 upgrade / `--webpack` opt-out: https://nextjs.org/docs/app/guides/upgrading/version-16

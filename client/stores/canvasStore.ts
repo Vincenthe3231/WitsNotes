@@ -9,28 +9,39 @@ interface Viewport {
   scale: number;
 }
 
+export interface Marquee {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 interface CanvasState {
   viewport: Viewport;
   selectedIds: Set<string>;
   draggingId: string | null;
   localCards: Map<string, Card>;
+  marquee: Marquee | null;
 
   setViewport: (vp: Partial<Viewport>) => void;
   panBy: (dx: number, dy: number) => void;
   zoomTo: (scale: number, originX: number, originY: number) => void;
   selectCard: (id: string, multi?: boolean) => void;
+  setSelection: (ids: string[]) => void;
   clearSelection: () => void;
   setDragging: (id: string | null) => void;
   upsertLocalCard: (card: Card) => void;
   removeLocalCard: (id: string) => void;
   setLocalCards: (cards: Card[]) => void;
+  setMarquee: (m: Marquee | null) => void;
 }
 
-export const useCanvasStore = create<CanvasState>()((set, get) => ({
+export const useCanvasStore = create<CanvasState>()((set) => ({
   viewport: { x: 0, y: 0, scale: 1 },
   selectedIds: new Set(),
   draggingId: null,
   localCards: new Map(),
+  marquee: null,
 
   setViewport: (vp) => set((s) => ({ viewport: { ...s.viewport, ...vp } })),
 
@@ -58,6 +69,8 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
       return { selectedIds: next };
     }),
 
+  setSelection: (ids) => set({ selectedIds: new Set(ids) }),
+
   clearSelection: () => set({ selectedIds: new Set() }),
 
   setDragging: (id) => set({ draggingId: id }),
@@ -78,4 +91,6 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
 
   setLocalCards: (cards) =>
     set({ localCards: new Map(cards.map((c) => [c.id, c])) }),
+
+  setMarquee: (m) => set({ marquee: m }),
 }));

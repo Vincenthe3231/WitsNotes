@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Card extends Model
@@ -32,6 +33,14 @@ class Card extends Model
         'remind_at'=> 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        // Soft-delete cascades: delete attachments so files are cleaned up
+        static::deleting(function (Card $card) {
+            $card->attachments->each->delete();
+        });
+    }
+
     public function board(): BelongsTo
     {
         return $this->belongsTo(Board::class);
@@ -40,5 +49,10 @@ class Card extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(Attachment::class);
     }
 }

@@ -6,7 +6,17 @@ import { useCanvasStore } from "@/stores/canvasStore";
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 4;
 
-export function useCanvasPointer(containerRef: React.RefObject<HTMLDivElement | null>) {
+interface MarqueeHandlers {
+  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => boolean;
+  onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: () => void;
+  isActive: () => boolean;
+}
+
+export function useCanvasPointer(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  marquee?: MarqueeHandlers
+) {
   const panBy = useCanvasStore((s) => s.panBy);
   const zoomTo = useCanvasStore((s) => s.zoomTo);
   const clearSelection = useCanvasStore((s) => s.clearSelection);
@@ -43,19 +53,28 @@ export function useCanvasPointer(containerRef: React.RefObject<HTMLDivElement | 
   }, [containerRef, zoomTo]);
 
   // Pan — cards call stopPropagation so this only fires on empty canvas
+  // Shift+drag → marquee (no pan, no clearSelection)
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (marquee && e.shiftKey) {
+        marquee.onPointerDown(e);
+        return;
+      }
       isPanning.current = true;
       panStart.current = { x: e.clientX, y: e.clientY };
       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
       if (containerRef.current) containerRef.current.dataset.panning = "true";
       clearSelection();
     },
-    [clearSelection, containerRef]
+    [clearSelection, containerRef, marquee]
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (marquee?.isActive()) {
+        marquee.onPointerMove(e);
+        return;
+      }
       if (!isPanning.current) return;
       const dx = e.clientX - panStart.current.x;
       const dy = e.clientY - panStart.current.y;
@@ -69,10 +88,14 @@ export function useCanvasPointer(containerRef: React.RefObject<HTMLDivElement | 
         pendingPan.current = { dx: 0, dy: 0 };
       });
     },
-    [panBy]
+    [panBy, marquee]
   );
 
   const onPointerUp = useCallback(() => {
+    if (marquee?.isActive()) {
+      marquee.onPointerUp();
+      return;
+    }
     isPanning.current = false;
     if (containerRef.current) delete containerRef.current.dataset.panning;
     if (panRafId.current) {
@@ -80,7 +103,7 @@ export function useCanvasPointer(containerRef: React.RefObject<HTMLDivElement | 
       panRafId.current = null;
     }
     pendingPan.current = { dx: 0, dy: 0 };
-  }, [containerRef]);
+  }, [containerRef, marquee]);
 
   return { onPointerDown, onPointerMove, onPointerUp };
 }

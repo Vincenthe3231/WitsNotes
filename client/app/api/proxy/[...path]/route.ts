@@ -28,18 +28,31 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ pat
   forwardHeaders.set("Accept", "application/json");
   if (token) forwardHeaders.set("Authorization", `Bearer ${token}`);
 
-  let body: BodyInit | null = null;
-  if (!["GET", "HEAD"].includes(request.method)) {
-    body = await request.arrayBuffer();
-  }
-
-  const upstream = await fetch(upstreamUrl, {
+  // Body forwarding:
+  // - Webpack dev + production: arrayBuffer() works fine for all sizes.
+  // - Turbopack dev: partially consumes the multipart stream before this handler runs,
+  //   making both arrayBuffer() and ReadableStream forwarding hang. Use --turbopack=false.
+  const fetchInit: RequestInit & { duplex?: "half" } = {
     method: request.method,
     headers: forwardHeaders,
-    body,
-    // @ts-expect-error Node fetch duplex
-    duplex: "half",
-  });
+  };
+  if (!["GET", "HEAD"].includes(request.method)) {
+    const isMultipart = (request.headers.get("content-type") ?? "").includes("multipart/form-data");
+    if (isMultipart) {
+      console.log(`[proxy] ${request.method} ${apiPath} multipart body=${request.body != null ? "present" : "null"}`);
+    }
+    if (request.body) {
+      // Use arrayBuffer to read the full body before forwarding.
+      // Turbopack may have consumed the stream — see package.json dev script for workaround.
+      const buf = await request.arrayBuffer();
+      console.log(`[proxy] ${request.method} ${apiPath} bodyBytes=${buf.byteLength}`);
+      fetchInit.body = buf;
+    }
+  }
+
+  console.log(`[proxy] forwarding ${request.method} ${upstreamUrl}`);
+  const upstream = await fetch(upstreamUrl, fetchInit);
+  console.log(`[proxy] upstream responded ${upstream.status} for ${apiPath}`);
 
   const upstreamData = upstream.headers.get("content-type")?.includes("application/json")
     ? await upstream.json()
@@ -47,7 +60,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ pat
 
   const responseHeaders = new Headers();
   for (const [k, v] of upstream.headers.entries()) {
-    if (!["transfer-encoding", "connection", "set-cookie", "content-encoding"].includes(k.toLowerCase())) {
+    if (!["transfer-encoding", "connection", "set-cookie", "content-encoding", "content-length"].includes(k.toLowerCase())) {
       responseHeaders.set(k, v);
     }
   }

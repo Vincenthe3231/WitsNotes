@@ -23,5 +23,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('boards.cards', CardController::class)->shallow();
 
     Route::get('/unfurl',       UnfurlController::class);
-    Route::post('/attachments', [AttachmentController::class, 'store']);
+    Route::post('/attachments',             [AttachmentController::class, 'store']);
+    Route::delete('/attachments/{attachment}', [AttachmentController::class, 'destroy']);
 });
