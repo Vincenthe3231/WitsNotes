@@ -61,6 +61,31 @@ tests/
 
 ## Key Conventions
 
+### Error Envelope Contract
+
+Every non-2xx response has the shape:
+
+```json
+{
+  "error": {
+    "code": "string_snake_case",
+    "message": "human readable",
+    "details": { } | null
+  }
+}
+```
+
+HTTP status is preserved (not duplicated). Map exceptions in `bootstrap/app.php` via `$exceptions->render(...)` callbacks:
+- **422 ValidationException** → `code: "validation_failed"`, `details: {field: [error_strings]}`.
+- **401 AuthenticationException** → `code: "unauthenticated"`.
+- **403 AuthorizationException** → `code: "forbidden"`.
+- **404 ModelNotFoundException / NotFoundHttpException** → `code: "not_found"`.
+- **405 MethodNotAllowedHttpException** → `code: "method_not_allowed"`.
+- **409 conflict** (cards only, `CardController::update` stale `base_updated_at`) → `code: "card_conflict"`, `details: {current: <fresh card>}`.
+- **500 fallback** → `code: "server_error"`, generic message (never leak trace in prod; include `details` only when `config('app.debug')`).
+
+Render via `ApiError::render(code, message, status, details)` helper.
+
 ### Routing
 - `routes/web.php` — web middleware group, session/cookie auth (Sanctum).
 - `routes/api.php` — `api` middleware group, prefix `/api`. All client-facing endpoints here.

@@ -13,6 +13,29 @@ Core API layer. Every server call flows through here.
 | `schemas.ts` | Zod schemas: `BoardSchema`, `CardSchema`, `NotebookTabSchema`… |
 | `auth.ts` | Auth fetch functions (`login`, `logout`, `getMe`) |
 
+## Error Handling Contract
+
+Every non-2xx response is routed through `ApiErrorSchema.safeParse()` in `client.ts` response interceptor.
+
+```ts
+// Shape
+{ "error": { "code": "snake_case", "message": "human readable", "details": null | {} } }
+
+// ApiError class (errors.ts)
+new ApiError(code, message, status, details?)
+
+// Routing table
+Status 422 (ValidationException) → ApiError with details → rejected, NOT toasted; caller handles inline
+Status 401 (Unauthenticated) → redirects to /auth/login, toast "Session expired"
+Status 403 (Forbidden) → error toast
+Status 404 (Not Found) → error toast
+Status 409 (Card conflict) → dispatches custom event "card:conflict" (SyncStatus handles), no toast
+Status 5xx → error toast
+Network error → error toast with "Network error"
+```
+
+When mutations throw `ApiError`, hooks detect the status and route accordingly. Login/register pages map 422 `details` (field→string[]) to inline field error messages.
+
 ## Proxy Auth Model
 
 **All API calls go through `/api/proxy/[...path]`** (Next.js server route handler).  

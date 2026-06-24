@@ -77,16 +77,29 @@ Tokens already wired as CSS vars (`--color-*`, `--glass-*`, `--nb-*`). Canonical
 - ✅ Glass/neu design tokens, dark/light, `Sidebar`/`Topbar` base layout.
 - 🟡 **Carryover:** confirm `docker-compose` has `web` + `api` + `postgres` + `redis` multi-stage Dockerfiles (verify on disk; not visible in index). ⬜ Add `.env.example` for both apps with PG/Redis/object-store vars.
 
-### Phase 1 — MVP canvas + notes (single-user, online) ✅ (core done; extend)
-Done: ✅ boards/cards CRUD + optimistic hooks · ✅ infinite canvas pan/zoom/cull/drag(snap)/resize · ✅ Memo/Todo/Task/Bookmark/Notebook cards · ✅ BlockNote editor + custom callout · ✅ wiki notebook (nested pages, DnD, autosave) · ✅ command palette + command registry · ✅ bookmark unfurl · ✅ auth pages + route guard.
+### Phase 1 — MVP canvas + notes (single-user, online) ✅ (core done; hardening complete)
 
-Remaining Phase-1 tasks:
+**Core MVP** ✅: boards/cards CRUD + optimistic hooks · infinite canvas pan/zoom/cull/drag(snap)/resize · Memo/Todo/Task/Bookmark/Notebook cards · BlockNote editor + custom callout · wiki notebook (nested pages, DnD, autosave) · command palette + command registry · bookmark unfurl · auth pages + route guard.
+
+**Phase 1A — Media & Import** ✅:
 - ✅ **Media cards** — `ImageCard`, `GifCard`, `AudioCard`, `FileCard` with renderers + progress states + retry UI.
 - ✅ **Upload pipeline** — `attachments` table + `AttachmentController` store/show/destroy; Cloudflare R2 storage; `uploadCardAttachment` shared helper.
-- 🟡 **OS drag-and-drop import** — `useCanvasDropImport` exists; wire to canvas drop handler; paste-from-clipboard (image/url) not yet done.
-- ⬜ **Card multi-select + group ops** — marquee select (selection state exists in store, wire UI), group move/delete/duplicate, z-order controls.
-- ⬜ **Shortcuts cheatsheet** — `?`-triggered modal listing keybindings (command palette exists; add static sheet).
-- 🟡 **Tests** — ✅ Pest `CardConflictTest` + factories + `AttachmentTest` landed; ✅ Vitest `uploadAttachment.test.ts` (XHR mock, progress, timeout); ⬜ still owed: Board/Card/Auth CRUD coverage; `canvasStore`, `useCardDrag`, culling math.
+- ✅ **OS drag-and-drop import** — `useCanvasDropImport` wired to canvas drop handler.
+- ✅ **Paste-from-clipboard import** — `useCanvasPaste` (image blob→image card, URL→bookmark, text→memo); toast feedback.
+- ✅ **Card multi-select + group ops** — marquee select, `GroupToolbar` (move/delete/duplicate/z-order), `ShortcutsModal` (`?`-triggered).
+
+**Phase 1B — Hardening & UX** ✅:
+- ✅ **Standardized error taxonomy** — `{error:{code,message,details}}` envelope on every non-2xx; `ApiError.php` + `bootstrap/app.php` exception handlers; 422/401/403/404/405/409/500 normalization.
+- ✅ **Toast system** — `toastStore` + `Toaster` (glass surface, per-level icons, auto-expire, 5-toast cap); axios interceptor routes errors to toast.
+- ✅ **Confirm dialog** — `confirmStore` promise-based + `ConfirmDialog` (glass, focus-trap, Esc-cancel) for all destructive deletes.
+- ✅ **Read / Edit canvas mode** — `CardPalette` mode segment (Hand/MousePointer2 pill); H/V hotkeys; mode gates marquee/delete/drag/resize/palette-content; double-click notebook open allowed in read.
+- ✅ **Zod input validation** — all mutation helpers (`createCard`, `updateCard`, etc.) `parse()` before sending; auth pages `safeParse()` + inline field errors + 422 mapping.
+- ✅ **Media `object-fit: cover`** — `ImageCard` / `GifCard` fill card frames without distortion; corners clipped by `CardShell` border-radius.
+
+**Tests** 🟡:
+- ✅ Pest `CardConflictTest` + factories + `AttachmentTest`.
+- ✅ Vitest `uploadAttachment.test.ts` (XHR mock, progress, timeout).
+- ⬜ Still owed: Board/Card/Auth CRUD; `canvasStore`, `useCardDrag`, culling; new stores (`toastStore`, `confirmStore`); `useCanvasPaste`, `useMarqueeSelect` aabb edge cases.
 
 ### Phase 2 — Offline-first PWA 🟡 → mostly ✅ (non-Yjs strategy)
 Done: ✅ Serwist SW (precache + runtime asset caching + `~offline` document fallback).

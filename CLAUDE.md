@@ -55,6 +55,22 @@ php artisan test
 - Fonts via `next/font/google` in `client/app/layout.tsx`; CSS vars `--font-geist-sans` / `--font-geist-mono` available globally.
 - **Service Worker only runs in production build** (`disable: NODE_ENV !== "production"`). To test offline/PWA: `pnpm build && pnpm start`.
 
+## Standardized Error Contract
+
+Every non-2xx API response has the same envelope:
+
+```json
+{
+  "error": {
+    "code": "string_snake_case",
+    "message": "human readable",
+    "details": { } | null
+  }
+}
+```
+
+HTTP status preserved (not duplicated in body). Backend routes exceptions via `ApiError::render()` in `bootstrap/app.php`. Frontend axios interceptor normalizes to `ApiError` class + routes to handlers (422→inline, 401→redirect+toast, others→toast, 409→SyncStatus). See `server/CLAUDE.md` and `client/lib/api/CLAUDE.md` for full contract + routing table.
+
 ## Offline-PWA (feat/offline-PWA branch)
 
 - Query persistence via `PersistQueryClientProvider` + `idbPersister` (IndexedDB, key `witsnote-rq`).
