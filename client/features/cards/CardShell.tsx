@@ -85,16 +85,18 @@ function CardShellInner({ card, boardId }: Props) {
   const upsertLocalCard = useCanvasStore((s) => s.upsertLocalCard);
   const removeLocalCard = useCanvasStore((s) => s.removeLocalCard);
   const mode = useCanvasStore((s) => s.mode);
+  // Prioritize localCards (optimistic updates) over prop — when dragging group, store updates positions live
+  const displayCard = useCanvasStore((s) => s.localCards.get(card.id)) || card;
   const { mutate: updateCard } = useUpdateCard();
   const { mutate: deleteCard } = useDeleteCard();
   const confirm = useConfirmStore((s) => s.confirm);
   const retryInputRef = useRef<HTMLInputElement>(null);
 
   const isSelected = selectedIds.has(card.id);
-  const isNotebook = card.type === "notebook";
-  const cardContent = card.content as { status?: string } | null;
-  const showRetry = MEDIA_CARD_TYPES.has(card.type) && cardContent?.status === "error";
-  const retryAccept = card.type === "audio" ? "audio/*" : card.type === "image" || card.type === "gif" ? "image/*" : "*/*";
+  const isNotebook = displayCard.type === "notebook";
+  const cardContent = displayCard.content as { status?: string } | null;
+  const showRetry = MEDIA_CARD_TYPES.has(displayCard.type) && cardContent?.status === "error";
+  const retryAccept = displayCard.type === "audio" ? "audio/*" : displayCard.type === "image" || displayCard.type === "gif" ? "image/*" : "*/*";
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(card.title ?? "");
@@ -102,44 +104,42 @@ function CardShellInner({ card, boardId }: Props) {
   const saveTitle = (val: string) => {
     setEditingTitle(false);
     const t = val.trim();
-    if (t !== (card.title ?? "")) {
-      upsertLocalCard({ ...card, title: t });
+    if (t !== (displayCard.title ?? "")) {
+      upsertLocalCard({ ...displayCard, title: t });
       updateCard({ boardId, id: card.id, input: { title: t } });
     }
   };
 
   const handleMoveEnd = useCallback(
     (x: number, y: number) => {
-      upsertLocalCard({ ...card, x, y });
+      upsertLocalCard({ ...displayCard, x, y });
       updateCard({ boardId, id: card.id, input: { x, y } });
     },
-    [boardId, card, upsertLocalCard, updateCard]
+    [boardId, displayCard, upsertLocalCard, updateCard]
   );
 
   const handleResizeEnd = useCallback(
     (x: number, y: number, w: number, h: number) => {
-      upsertLocalCard({ ...card, x, y, w, h });
+      upsertLocalCard({ ...displayCard, x, y, w, h });
       updateCard({ boardId, id: card.id, input: { x, y, w, h } });
     },
-    [boardId, card, upsertLocalCard, updateCard]
+    [boardId, displayCard, upsertLocalCard, updateCard]
   );
 
   const handleGroupMoveEnd = useCallback(
-    (_draggedId: string, dx: number, dy: number) => {
+    () => {
+      // localCards already has final positions from live drag — just persist to server
       const { selectedIds: sel, localCards } = useCanvasStore.getState();
       sel.forEach((id) => {
         const c = localCards.get(id);
         if (!c) return;
-        const nx = c.x + dx;
-        const ny = c.y + dy;
-        upsertLocalCard({ ...c, x: nx, y: ny });
-        updateCard({ boardId, id, input: { x: nx, y: ny } });
+        updateCard({ boardId, id, input: { x: c.x, y: c.y } });
       });
     },
-    [boardId, upsertLocalCard, updateCard]
+    [boardId, updateCard]
   );
 
-  const { onPointerDown: onDragDown, onPointerMove: onDragMove, onPointerUp: onDragUp } =
+  const { onPointerDown: onDragDown, onPointerMove: onDragMove, onPointerUp: onDragUp, onPointerCancel: onDragCancel } =
     useCardDrag(card, handleMoveEnd, handleGroupMoveEnd);
 
   const { onPointerDown: onResizeDown, onPointerMove: onResizeMove, onPointerUp: onResizeUp } =
@@ -157,25 +157,25 @@ function CardShellInner({ card, boardId }: Props) {
   }
 
   const tabs = isNotebook
-    ? (card.content as { tabs?: NotebookTab[] } | null)?.tabs
+    ? (displayCard.content as { tabs?: NotebookTab[] } | null)?.tabs
     : undefined;
   const pageCount = tabs ? flatten(tabs).length : 0;
-  const encrypted = !!(card.style as { encrypted?: boolean } | null)?.encrypted;
+  const encrypted = !!(displayCard.style as { encrypted?: boolean } | null)?.encrypted;
 
   const displayTitle = isNotebook
-    ? (card.title ?? "Notebook")
-    : (card.title ?? card.type);
+    ? (displayCard.title ?? "Notebook")
+    : (displayCard.title ?? displayCard.type);
 
   return (
     <div
       className="absolute"
       style={{
-        left: card.x,
-        top: card.y,
-        width: card.w,
-        height: card.h,
-        zIndex: card.z,
-        transform: card.rotation ? `rotate(${card.rotation}deg)` : undefined,
+        left: displayCard.x,
+        top: displayCard.y,
+        width: displayCard.w,
+        height: displayCard.h,
+        zIndex: displayCard.z,
+        transform: displayCard.rotation ? `rotate(${displayCard.rotation}deg)` : undefined,
         boxSizing: "border-box",
       }}
       onClick={handleClick}
@@ -214,6 +214,7 @@ function CardShellInner({ card, boardId }: Props) {
         onPointerDown={mode === "edit" ? onDragDown : undefined}
         onPointerMove={mode === "edit" ? onDragMove : undefined}
         onPointerUp={mode === "edit" ? onDragUp : undefined}
+        onPointerCancel={onDragCancel}
       >
         <GripVertical size={13} style={{ color: "var(--color-text-muted)", opacity: 0.5, flexShrink: 0 }} />
 
@@ -233,7 +234,7 @@ function CardShellInner({ card, boardId }: Props) {
             onDoubleClick={(e) => {
               if (mode === "edit") {
                 e.stopPropagation();
-                setTitleDraft(card.title ?? (isNotebook ? "Notebook" : card.type));
+                setTitleDraft(displayCard.title ?? (isNotebook ? "Notebook" : displayCard.type));
                 setEditingTitle(true);
               }
             }}
@@ -286,8 +287,8 @@ function CardShellInner({ card, boardId }: Props) {
       {/* Card content */}
       <div style={{ height: "calc(100% - 28px)", overflow: "hidden", position: "relative" }}>
         {(() => {
-          const Renderer = CARD_RENDERERS[card.type] ?? NotebookCard;
-          return <Renderer card={card} boardId={boardId} />;
+          const Renderer = CARD_RENDERERS[displayCard.type] ?? NotebookCard;
+          return <Renderer card={displayCard} boardId={boardId} />;
         })()}
         {showRetry && (
           <button

@@ -32,6 +32,7 @@ interface CanvasState {
   clearSelection: () => void;
   setDragging: (id: string | null) => void;
   upsertLocalCard: (card: Card) => void;
+  upsertLocalCards: (cards: Card[]) => void;
   removeLocalCard: (id: string) => void;
   setLocalCards: (cards: Card[]) => void;
   setMarquee: (m: Marquee | null) => void;
@@ -82,6 +83,13 @@ export const useCanvasStore = create<CanvasState>()((set) => ({
     set((s) => {
       const m = new Map(s.localCards);
       m.set(card.id, card);
+      return { localCards: m };
+    }),
+
+  upsertLocalCards: (cards) =>
+    set((s) => {
+      const m = new Map(s.localCards);
+      cards.forEach((c) => m.set(c.id, c));
       return { localCards: m };
     }),
 

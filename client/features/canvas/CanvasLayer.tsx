@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useEffect } from "react";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { Card } from "@/lib/api/schemas";
 import { CardShell } from "@/features/cards/CardShell";
@@ -33,6 +33,15 @@ export function CanvasLayer({ cards, boardId }: Props) {
   const viewport = useCanvasStore((s) => s.viewport);
   const localCards = useCanvasStore((s) => s.localCards);
   const marquee = useCanvasStore((s) => s.marquee);
+  const upsertLocalCards = useCanvasStore((s) => s.upsertLocalCards);
+
+  // Seed localCards with server cards so group-drag snapshot has positions for all selected cards.
+  // Only adds cards missing from the map — never overwrites optimistic updates.
+  useEffect(() => {
+    const { localCards: current } = useCanvasStore.getState();
+    const unseen = cards.filter((c) => !current.has(c.id));
+    if (unseen.length > 0) upsertLocalCards(unseen);
+  }, [cards, upsertLocalCards]);
 
   const merged = useMemo(() => {
     const map = new Map(cards.map((c) => [c.id, localCards.get(c.id) ?? c]));
