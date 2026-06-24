@@ -1,124 +1,215 @@
-# Fix: Attachment upload stuck at "Uploading… 0%" forever
+# WitsNote — Phase 1 Finish & Hardening Plan
 
 ## Context
 
-Dropping/adding a file (image/audio/file) creates a card with `content.status = "uploading"`,
-then uploads the file, then PATCHes the card to `status: "ready"`. In practice the card stays
-`{status:"uploading", progress:0}` permanently — survives page refresh / hard refresh because the
-**database row was never advanced past the initial `uploading` state**.
+PLAN.md was last drafted against an older snapshot and is **materially stale**. A fresh codegraph audit shows nearly every "remaining Phase-1" canvas item is **already shipped and wired**:
 
-### Root cause (high confidence)
+| PLAN.md said | Reality (codegraph) |
+|---|---|
+| ⬜ multi-select + marquee | ✅ `useMarqueeSelect.ts` + `marquee` state + overlay in `CanvasLayer` |
+| ⬜ group ops (del/dup/z-order) | ✅ `GroupToolbar.tsx` (delete, duplicate, bring-to-front, send-to-back) |
+| ⬜ group move | ✅ `useCardDrag.onGroupMoveEnd` + `CardShell.handleGroupMoveEnd` |
+| ⬜ shortcuts cheatsheet | ✅ `ShortcutsModal.tsx` (`?` trigger) + `useCanvasKeyboard.ts` |
+| 🟡 OS drag-drop import | ✅ `useCanvasDropImport` wired to `InfiniteCanvas` `onDrop` |
 
-The upload `POST /api/proxy/attachments` **hangs and never returns**, so neither the success
-(`status:"ready"`) nor the catch (`status:"error"`) branch of `handleFile` ever runs. The user
-refreshes repeatedly, killing the in-flight `XMLHttpRequest` each time, so the card is frozen at
-`uploading` in the DB forever.
+So the **true remaining Phase-1 work** is hardening + one net-new feature + targeted UX, driven by the user's five constraints. Goal: kill "ghost bugs" via a standardized error taxonomy, push Zod to a single source of truth, finish the import story (paste), add a read/edit interaction mode, guard destructive deletes, fix media fit, and backfill the thin test layer.
 
-Why it hangs: `client/app/api/proxy/[...path]/route.ts` forwards multipart uploads by **buffering
-the whole body** (`body = await request.arrayBuffer()`) and re-`fetch()`-ing it to Laravel. This is
-the exact pattern that hangs on Next.js App Router route handlers for request bodies above
-~64–100 kB, driven by:
-- Node ≥ 20.4.0 undici body-forwarding regression — Next issue [#52616](https://github.com/vercel/next.js/issues/52616), [#64002](https://github.com/vercel/next.js/issues/64002).
-- **Turbopack is the default dev bundler in Next 16** (`next dev`, no flag) and partially consumes the
-  multipart stream before the handler runs — the proxy comment already documents this. Switching
-  `formData()` → `arrayBuffer()` did NOT fix it because `arrayBuffer()` reads the same broken stream.
+**Stack (locked):** Next.js + React 19 + TanStack Query + Zod + zustand (client) · Laravel + PostgreSQL + Eloquent (server). No CQRS, no event sourcing, no new abstractions. Glassmorphism overlays + neumorphic controls.
 
-`AxioSpark.png` (image, >100 kB) is over the threshold → hang. Small files would pass.
+**Design non-negotiables (carry into every new component):** Lucide SVG icons · `cursor-pointer` on interactives · 150–300ms opacity/transform transitions · `:focus-visible` rings · `prefers-reduced-motion` · 4.5:1 contrast · `aria-live` on async status · 44px touch targets. **z-index scale:** cards 10 · floating toolbars 30 · sidebar/topbar 40 · palette/modals 50 · toasts 60. **Tokens only** (`--color-primary`, `--color-surface`, `--color-surface-glass`, `--glass-bg-light`, `--glass-border`, `--glass-blur`, `--color-border`, `--color-text`, `--color-text-muted`, `--color-warning`) — no new tokens invented.
 
-### Ruled out (evidence)
+---
 
-- **Disk/R2 misconfig** (`config/attachments.php` defaults to `public`; `r2_*` disks have `throw=true`):
-  would make `store()` throw → 500 → catch branch → card shows `status:"error"` ("Upload failed").
-  Card shows `uploading`, not `error` → not this.
-- **409 conflict guard** (`CardController::update`): the ready-update's `base_updated_at` matches the
-  freshly-created card's `updated_at` (or is `undefined` while optimistic temp card is in cache →
-  guard skipped). Not a persistent cause.
-- The PATCH returning `uploading` content in the DevTools screenshot is a **card-drag position
-  update** echoing the unchanged `content`, not the attachment-complete update.
+## Workstream 1 — Standardized Error Taxonomy  *(architecture · laravel · nextjs)*
 
-## Fix
+**The contract** (single shape, every non-2xx API response):
 
-### 1. Proxy — stream the body instead of buffering (root cause)
-
-`client/app/api/proxy/[...path]/route.ts`
-
-- For non-GET/HEAD, forward `request.body` (a `ReadableStream`) **directly** to upstream `fetch`
-  with `duplex: "half"`. Next 16's fetch supports duplex streaming natively — no buffering.
-- Keep the original `content-type` (with multipart boundary) intact. Do not re-read/re-encode.
-- Drop the `arrayBuffer()` branch and the `body instanceof ReadableStream` conditional for duplex
-  (always set `duplex:"half"` when a stream body is present).
-- Leave the IPv4 note: `UPSTREAM` already uses `localhost` — fine since other proxied calls work.
-
-Representative shape:
-```ts
-let body: BodyInit | null = null;
-const init: RequestInit & { duplex?: "half" } = { method: request.method, headers: forwardHeaders };
-if (!["GET", "HEAD"].includes(request.method)) {
-  body = request.body;            // ReadableStream — no buffering
-  init.body = body;
-  init.duplex = "half";
-}
-const upstream = await fetch(upstreamUrl, init);
+```json
+{ "error": { "code": "string_snake_case", "message": "human readable", "details": { } | null } }
 ```
 
-- If streaming still hangs under Turbopack on this machine, the fallback lever is
-  `next dev --webpack` (Next 16 opt-out). Capture this in `client/CLAUDE.md` rather than changing
-  the default — verify streaming first.
+HTTP status is preserved (not duplicated in body). `details` carries the per-case payload (validation field map, conflict's fresh card, etc.).
 
-### 2. Frontend resilience — never freeze on `uploading`
+### 1a. Backend — normalize in `bootstrap/app.php`
+Stay lean: do it inside the existing `withExceptions(...)` closure with `$exceptions->render(...)` callbacks — **no custom middleware, no global Handler class**. Keep the existing `shouldRenderJsonWhen(api/*)`.
 
-`client/features/cards/CardPalette.tsx` (`handleFileChosen`) and
-`client/features/canvas/useCanvasDropImport.ts` (`handleFile`) share the identical flow.
+Map exceptions → envelope + status:
+- `ValidationException` → **422**, `code: "validation_failed"`, `details: $e->errors()` (field → string[] map).
+- `AuthenticationException` → **401**, `code: "unauthenticated"`.
+- `AuthorizationException` / policy denial → **403**, `code: "forbidden"`.
+- `ModelNotFoundException` + `NotFoundHttpException` → **404**, `code: "not_found"`.
+- `MethodNotAllowedHttpException` → **405**, `code: "method_not_allowed"`.
+- Fallback → **500**, `code: "server_error"`, generic message (never leak trace in prod; include `details` only when `config('app.debug')`).
 
-- The `catch` already sets `status:"error"` + PATCHes it — keep. The real gap is the **hang** (no
-  reject fires). `uploadAttachment` already sets `xhr.timeout = 60_000` → `ontimeout` rejects → catch
-  runs. Confirm the catch's `updateCard({... status:"error"})` reliably persists so a stuck upload
-  self-heals to "error" after 60 s instead of frozen `uploading`.
-- Add a retry affordance: in the `error` branch of `ImageCard` / `FileCard` / `AudioCard`
-  (`status === "error"`), render a "Retry" button that re-runs the upload for that card.
-- Consider lowering `xhr.timeout` (e.g. 30 s) so failures surface faster.
-- Factor the duplicated create→upload→update flow into one shared helper (e.g.
-  `client/lib/api/uploadCardAttachment.ts`) so both call sites stay in sync. Reuse existing
-  `uploadAttachment` (`client/lib/api/boards.ts:65`) and `useUpdateCard` (`client/lib/api/hooks.ts:204`).
+Add one tiny enum-like helper `app/Support/ApiError.php` (a static `render(code, message, status, details)` returning `JsonResponse`) so controllers and the exception callbacks share one builder. No interface, no DI — a plain static class.
 
-### 3. Tests
+### 1b. Backend — conflict path (`CardController::update`)
+Currently returns the raw fresh card with 409 (`server/app/Http/Controllers/CardController.php:78`). Standardize to the envelope:
+```php
+return ApiError::render('card_conflict', 'Card was modified elsewhere.', 409, ['current' => $card]);
+```
+Safe: the client 409 handler only reads `status` today (`hooks.ts:158`), so moving the card under `details.current` breaks nothing and lets us surface remote state later.
 
-- **Server** — extend `server/tests/Feature/AttachmentTest.php`: assert `POST /api/attachments`
-  with `UploadedFile::fake()->image()` returns 201 + creates the `Attachment` row (use the `public`
-  disk via `Storage::fake`). This locks the backend contract the proxy depends on.
-- **Client** — add a `vitest` test (config already at `client/vitest.config.ts`) for
-  `uploadAttachment`: mock `XMLHttpRequest`, assert it resolves on 201 and rejects on timeout/error.
-  Optionally a route-handler test that a multipart POST forwards body + Bearer to upstream.
+### 1c. Frontend — axios interceptor in `lib/api/client.ts`
+Add a **response interceptor** (the file currently has none):
+- On error, run `res.data` through `ApiErrorSchema.safeParse`. On success, throw a typed `ApiError` (class: `code`, `message`, `details`, `status`). On parse failure (HTML 500 page, network error, timeout), synthesize `ApiError("network_error" | "server_error", …)`.
+- Re-reject so TanStack Query `onError` still fires. **No UI side-effects inside the interceptor itself except a single dispatch** to the toast store (Workstream 2) for "global" levels.
+- Routing by status:
+  - **422** → do **not** toast; attach `details` to the thrown `ApiError` so forms read field errors inline.
+  - **401** → clear auth + redirect (reuse `useAuthGuard` path) — toast "Session expired".
+  - **403 / 404 / 5xx / network** → toast (`error`).
+  - **409** → keep existing `card:conflict` CustomEvent → `SyncStatus` banner (no duplicate toast).
 
-## Critical files
+### 1d. Zod — `ApiErrorSchema` in `lib/api/schemas.ts`
+```ts
+export const ApiErrorSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    details: z.unknown().nullish().transform(v => v ?? null),
+  }),
+});
+```
+Derive `ApiErrorBody = z.infer<…>`.
 
-- `client/app/api/proxy/[...path]/route.ts` — proxy streaming fix (primary)
-- `client/features/cards/CardPalette.tsx` — upload flow + retry
-- `client/features/canvas/useCanvasDropImport.ts` — upload flow (dedupe)
-- `client/lib/api/boards.ts` — `uploadAttachment` (timeout tweak)
-- `client/features/cards/{ImageCard,FileCard,AudioCard,GifCard}.tsx` — error/retry UI
-- `server/tests/Feature/AttachmentTest.php`, `client/vitest.config.ts` (+ new client test)
+**Critical files:** `server/bootstrap/app.php`, new `server/app/Support/ApiError.php`, `server/app/Http/Controllers/CardController.php`, `client/lib/api/client.ts`, `client/lib/api/schemas.ts`.
 
-## Verification (do this FIRST to confirm root cause)
+---
 
-1. **Confirm the hang location.** Start Laravel (`php -d upload_max_filesize=50M -d post_max_size=60M
-   artisan serve`) and Next (`pnpm dev`). Upload an image > 100 kB. Watch the Laravel console /
-   `storage/logs/laravel.log`:
-   - POST `/api/attachments` **never arrives** → confirms proxy body-forwarding hang (this plan).
-   - Arrives + returns 201 but client stuck → re-investigate response/409 path instead.
-2. Apply the proxy streaming fix. Re-upload the same image:
-   - Network: `POST /api/proxy/attachments` returns 201 within ~1 s.
-   - Card flips `uploading → ready`, image renders.
-   - DB: `cards.content.status = "ready"` with `attachment_id`/`url`. Survives hard refresh.
-3. Force-fail path: stop Laravel mid-upload (or point disk at bad R2 creds) → card lands on
-   `error` with a working **Retry**, never frozen `uploading`.
-4. `cd client && pnpm lint && pnpm test`; `cd server && php artisan test --filter=Attachment`.
-5. If streaming hangs under Turbopack, retry with `next dev --webpack` to isolate the bundler, then
-   document.
+## Workstream 2 — Toast System  *(ui-ux-pro-max · nextjs)*
 
-## Sources
+No notification system exists today (only `SyncStatus` aria-live + `CommandPalette`). Add a minimal one, mirroring the `commandStore` pattern.
 
-- Next.js #52616 — fetch + formData in route handler never returns >100 kB (Node 20.4.0): https://github.com/vercel/next.js/issues/52616
-- Next.js #64002 — route handler stuck on `await request.formData()`: https://github.com/vercel/next.js/issues/64002
-- Next.js 16 duplex streaming proxy pattern: https://learnwebcraft.com/learn/nextjs/nextjs-16-proxy-ts-changes-everything
-- Next.js 16 upgrade / `--webpack` opt-out: https://nextjs.org/docs/app/guides/upgrading/version-16
+- **`client/stores/toastStore.ts`** (zustand): `Toast = { id, level: 'error'|'warning'|'info'|'success', message, ttl }`; `push(toast)`, `dismiss(id)`; auto-expire via `setTimeout` in `push`. Map-or-array of toasts. No persistence.
+- **`client/components/ui/Toaster.tsx`**: fixed bottom-right stack, **z-60**, glass surface (`--color-surface-glass` + `backdrop-blur`, `--glass-border` hairline). `aria-live="assertive"` for `error`, `"polite"` otherwise. Per-level Lucide icon + color (`--color-warning` for warning, danger for error, `--color-primary` for info). Neumorphic dismiss `X` button (44px hit area). 150–300ms enter/exit; respect `prefers-reduced-motion`.
+- **Mount** once in `client/app/providers.tsx` (alongside `CommandPalette`).
+- Interceptor (1c) calls `useToastStore.getState().push(...)` — store read outside React is fine for zustand.
+
+**Critical files:** new `client/stores/toastStore.ts`, new `client/components/ui/Toaster.tsx`, `client/app/providers.tsx`.
+
+---
+
+## Workstream 3 — Maximize Zod  *(nextjs)*
+
+Responses are already `.parse()`d everywhere (`boards.ts`, `auth.ts`) — good. Close the input/form gaps:
+
+- **Pre-flight input validation** in `lib/api/boards.ts`: `.parse(input)` with `CreateCardSchema` / `UpdateCardSchema` / `CreateBoardSchema` before POST/PATCH (today they're TS-typed only). Catches malformed optimistic payloads before they hit the network.
+- **Schema-driven auth** in `lib/api/auth.ts`: parse args with `LoginSchema` / `RegisterSchema` before the request.
+- **Auth forms** (`client/app/auth/login`, `client/app/auth/register` — verify exact paths): replace manual checks with `safeParse`, map `error.flatten().fieldErrors` to inline field messages; on submit, map a thrown **422** `ApiError` (`details`) to the same field slots. Single source of truth = the Zod schema.
+
+**Critical files:** `client/lib/api/boards.ts`, `client/lib/api/auth.ts`, auth page components.
+
+---
+
+## Workstream 4 — Paste-from-Clipboard Import  *(nextjs · feature-forge)*
+
+The one net-new feature. Extend `client/features/canvas/useCanvasDropImport.ts` (or sibling `useCanvasPaste.ts`) with an `onPaste(ClipboardEvent)`:
+- **Image blob** in `clipboardData.files` / `items` → reuse existing `handleFile(file, x, y)`; position at `canvasCenter(viewport)` (no cursor on paste).
+- **Text that is a URL** → create a `bookmark` card at center (reuse the bookmark/unfurl flow; `BookmarkCard` already live-unfurls).
+- Reuse `mimeToCardType`, `uploadCardAttachment`, `canvasCenter` — no new upload code.
+- Wire a `paste` listener in `InfiniteCanvas` (window-level, guarded by `isInputFocused()` from `useCanvasKeyboard` so editor pastes are untouched).
+- **Gated by edit mode** (Workstream 5).
+- Update `ShortcutsModal` GROUPS: add `Cmd/Ctrl+V → Paste image / link`.
+
+**EARS:** *When the user pastes while the canvas (not an input) is focused and mode is edit, the system shall create an image card from a clipboard image or a bookmark card from a clipboard URL, centered in the viewport.*
+
+**Critical files:** `client/features/canvas/useCanvasDropImport.ts`, `client/features/canvas/InfiniteCanvas.tsx`, `client/components/ui/ShortcutsModal.tsx`.
+
+---
+
+## Workstream 5 — Read / Edit Canvas Mode  *(architecture · ui-ux-pro-max · feature-forge)*
+
+**Read** = roam only (pan + zoom). **Edit** = full interaction. Default `edit`.
+
+- **State:** add `mode: 'read' | 'edit'` + `setMode` to `client/stores/canvasStore.ts`.
+- **Gating (guard at the gesture source, not by unmounting):**
+  - `useCanvasPointer` — read: pan/zoom only; shift-drag marquee disabled.
+  - `useMarqueeSelect` — `onPointerDown` returns `false` in read.
+  - `CardShell` — read: `handleClick` selection off, header drag off (`cursor: default`), resize handles hidden, inline delete + title-edit hidden. **Keep** double-click → open notebook (read-friendly).
+  - `useCanvasKeyboard` — read: ignore Delete/Backspace, Cmd+A, Cmd+D; keep `?`; add mode hotkeys.
+  - `GroupToolbar` — returns null in read (selection stays empty anyway).
+  - `CardPalette` — hidden in read.
+  - Drop-import + paste (W4) — no-op in read.
+- **Toggle UI:** neumorphic segmented control (Lucide `Hand` / `MousePointer2`), floating top-left (**z-30**), inset-shadow on the active segment. Keyboard: `H` → read, `V` → edit (Figma idiom) via `useCanvasKeyboard`. Register both as `CommandPalette` commands. Add a "Mode" group to `ShortcutsModal`.
+
+**EARS:** *While in read mode, the system shall permit only pan and zoom and shall ignore selection, drag, resize, delete, creation, and import gestures.*
+
+**Critical files:** `client/stores/canvasStore.ts`, `useCanvasPointer.ts`, `useMarqueeSelect.ts`, `useCanvasKeyboard.ts`, `CardShell.tsx`, `GroupToolbar.tsx`, `CardPalette.tsx`, new `client/features/canvas/ModeToggle.tsx`, `ShortcutsModal.tsx`.
+
+---
+
+## Workstream 6 — Delete Confirmation  *(ui-ux-pro-max)*
+
+Today all three delete paths fire immediately: `CardShell` trash button (`CardShell.tsx:258`), `GroupToolbar.handleDelete`, `useCanvasKeyboard` Delete/Backspace. Add a confirm gate.
+
+- **`client/stores/confirmStore.ts`** — promise-based: `confirm({ title, message, danger }) → Promise<boolean>`; holds one pending request + resolver.
+- **`client/components/ui/ConfirmDialog.tsx`** — glass dialog mirroring `ShortcutsModal` (backdrop blur, `role="dialog" aria-modal`, focus trap, Esc cancels, **z-50**). Destructive confirm button in danger color; neumorphic Cancel; **Cancel autofocused**; 44px targets; `prefers-reduced-motion`. Mounted once in `providers.tsx`.
+- **Wire:** each delete path becomes `if (await confirm({ danger: true, message })) { removeLocalCard; deleteCard }`. Group delete message is count-aware: *"Delete N cards? This can't be undone."*
+
+**Critical files:** new `client/stores/confirmStore.ts`, new `client/components/ui/ConfirmDialog.tsx`, `client/app/providers.tsx`, `CardShell.tsx`, `GroupToolbar.tsx`, `useCanvasKeyboard.ts`.
+
+---
+
+## Workstream 7 — Media `object-fit: cover`  *(ui-ux-pro-max)*
+
+`ImageCard.tsx` (and `GifCard` which composes it) render uploaded media. Ensure the media element fills the card frame without distortion:
+```
+width: 100%; height: 100%; object-fit: cover; display: block;
+```
+The card already clips (CardShell inner `overflow:hidden`, `borderRadius:12`). Optional `style.fit` escape hatch (`cover` default, `contain` opt-in) read from `card.style`. Verify current `<img>` style in `client/features/cards/ImageCard.tsx` and adjust.
+
+**Critical files:** `client/features/cards/ImageCard.tsx` (+ `GifCard.tsx` if it sets its own fit).
+
+---
+
+## Workstream 8 — Tests Backfill  *(test-master · feature-forge acceptance)*
+
+**Vitest / RTL** (only `cull.test.ts` exists):
+- `canvasStore` — select/multi-toggle, `setSelection`, `setMode`, `localCards` upsert/remove.
+- `useCardDrag` — `snap()` rounding + group-move delta math.
+- `useMarqueeSelect.aabbIntersects` — hit/miss edges.
+- `useCanvasKeyboard` — mode-gated + confirm-gated branches.
+- `GroupToolbar` — bring-to-front / send-to-back z math.
+- `toastStore` (push/expire/dismiss), `confirmStore` (resolve true/false).
+- `ApiError` normalization — interceptor maps 422/404/409/500/network correctly.
+- paste handler — image blob → image card; URL text → bookmark card.
+
+**Pest** (have `CardConflictTest`, `AttachmentTest` + factories):
+- Board CRUD + `BoardPolicy` (owner-only).
+- Card CRUD + policy.
+- Auth — register / login / logout / me.
+- **Error envelope** — assert the `{error:{code,message,details}}` shape and status for 422, 403, 404, 409.
+
+---
+
+## Workstream 9 — Update PLAN.md
+
+Re-tag Phase 1: flip the shipped items to ✅ (marquee, group ops, group-move, shortcuts, cheatsheet, drop-import). Add new sub-tasks with status: error taxonomy, toast system, Zod input/form hardening, paste-from-clipboard, read/edit mode, delete confirmation, media object-fit, test backfill. Correct the stale ⬜/🟡 markers and the "Cross-cutting gap" test note.
+
+---
+
+## Workstream 10 — Update all CLAUDE.md
+
+Reflect the new patterns in every CLAUDE.md (6 files). Touch only what changed; do not rewrite working sections.
+
+- **`CLAUDE.md` (root)** — add the error-taxonomy contract (`{error:{code,message,details}}`) as a cross-cutting convention. Reconcile the stated stack versions with reality before editing (root says Next.js 15 / Laravel 12; PLAN.md/user say 16 / 13 — **verify on disk, do not assume**, then align).
+- **`client/CLAUDE.md`** — document: toast system (`toastStore` + `Toaster`), canvas read/edit mode (`canvasStore.mode`, gating rule, `H`/`V`), delete-confirmation (`confirmStore` + `ConfirmDialog`), paste-import, media `object-fit:cover` convention. Add new files to the directory map.
+- **`client/lib/api/CLAUDE.md`** — document the axios response interceptor + `ApiError` class + `ApiErrorSchema`; the input-`parse()` pre-flight rule; how 422/401/403/404/409/5xx are routed.
+- **`server/CLAUDE.md`** — document the normalized error envelope, the `ApiError` helper, and the `withExceptions` render mapping. Reconcile Laravel version note if needed.
+- **`server/app/Http/CLAUDE.md`** — controllers now return errors via the envelope/`ApiError`; note the 409 conflict shape (`details.current`).
+- **`client/features/notebook/CLAUDE.md`** — only if read/edit mode or confirm affects notebook flows (likely a one-line note that notebook open is read-mode-safe).
+
+**Critical files:** all six paths above.
+
+## Verification (end-to-end)
+
+1. **Backend:** `docker compose up -d postgres redis`, `php artisan migrate`. Hit endpoints with bad/forbidden/missing payloads → confirm every error is `{error:{code,message,details}}` + correct status. `php artisan test` (CRUD + policy + envelope-shape suites green).
+2. **Frontend:** `pnpm lint` after each edit (never `tsc --noEmit`). `pnpm test` (Vitest suites above). `pnpm dev`:
+   - Trigger a 500 / 403 / network drop → toast appears, glass styling, aria-live, auto-dismiss.
+   - Submit bad login → inline field errors from Zod + 422 mapping (no toast).
+   - Paste an image and a URL onto the canvas → image card / bookmark card at center.
+   - Toggle read mode (`H`): pan/zoom only; cards non-interactive; palette hidden. Edit mode (`V`): full interaction restored.
+   - Delete a card and a multi-selection → confirm dialog gates both; Esc/Cancel aborts; focus trapped.
+   - Upload an image → fills card frame `object-fit:cover`, no distortion, corners clipped.
+3. **Conflict regression:** offline edit → reconnect with stale `base_updated_at` → 409 envelope → `card:conflict` → `SyncStatus` banner (no duplicate toast).
+4. **A11y/UI pass:** focus-visible rings, `prefers-reduced-motion`, 44px targets, z-index order (toasts above modals above palette), contrast on new surfaces.

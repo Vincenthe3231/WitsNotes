@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Board;
 use App\Models\Card;
+use App\Support\ApiError;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -75,7 +76,12 @@ class CardController extends Controller
             $card->updated_at->toISOString() !== $data['base_updated_at']
         ) {
             $card->refresh();
-            return response()->json($card, 409);
+            return ApiError::render(
+                'card_conflict',
+                'Card was modified elsewhere.',
+                409,
+                ['current' => $card]
+            );
         }
 
         unset($data['base_updated_at']);

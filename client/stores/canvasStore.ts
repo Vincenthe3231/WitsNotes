@@ -22,6 +22,7 @@ interface CanvasState {
   draggingId: string | null;
   localCards: Map<string, Card>;
   marquee: Marquee | null;
+  mode: "read" | "edit";
 
   setViewport: (vp: Partial<Viewport>) => void;
   panBy: (dx: number, dy: number) => void;
@@ -34,6 +35,7 @@ interface CanvasState {
   removeLocalCard: (id: string) => void;
   setLocalCards: (cards: Card[]) => void;
   setMarquee: (m: Marquee | null) => void;
+  setMode: (mode: "read" | "edit") => void;
 }
 
 export const useCanvasStore = create<CanvasState>()((set) => ({
@@ -42,6 +44,7 @@ export const useCanvasStore = create<CanvasState>()((set) => ({
   draggingId: null,
   localCards: new Map(),
   marquee: null,
+  mode: "edit",
 
   setViewport: (vp) => set((s) => ({ viewport: { ...s.viewport, ...vp } })),
 
@@ -93,4 +96,6 @@ export const useCanvasStore = create<CanvasState>()((set) => ({
     set({ localCards: new Map(cards.map((c) => [c.id, c])) }),
 
   setMarquee: (m) => set({ marquee: m }),
+
+  setMode: (mode) => set({ mode }),
 }));

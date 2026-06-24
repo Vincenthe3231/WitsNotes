@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef } from "react";
-import { FileText, CheckSquare, Bookmark, Link2, Plus, Image as ImageIcon, Music, Paperclip } from "lucide-react";
+import { useRef, useEffect } from "react";
+import { FileText, CheckSquare, Bookmark, Link2, Plus, Image as ImageIcon, Music, Paperclip, Hand, MousePointer2 } from "lucide-react";
 import { useCreateCard, useUpdateCard } from "@/lib/api/hooks";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { Card, CardType } from "@/lib/api/schemas";
 import { uploadCardAttachment } from "@/lib/api/uploadCardAttachment";
 import { canvasCenter } from "@/lib/canvas/coords";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 const PALETTE_ITEMS: { type: CardType; icon: React.ReactNode; label: string }[] = [
   { type: "notebook",  icon: <FileText size={18} />,    label: "Notebook" },
@@ -31,8 +32,29 @@ export function CardPalette({ boardId }: Props) {
   const { mutate: updateCard } = useUpdateCard();
   const viewport = useCanvasStore((s) => s.viewport);
   const upsertLocalCard = useCanvasStore((s) => s.upsertLocalCard);
+  const mode = useCanvasStore((s) => s.mode);
+  const setMode = useCanvasStore((s) => s.setMode);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFile = useRef<File | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+
+  // H/V keyboard handlers
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Skip if input is focused
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "h" || e.key === "H") {
+        e.preventDefault();
+        setMode("read");
+      } else if (e.key === "v" || e.key === "V") {
+        e.preventDefault();
+        setMode("edit");
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [setMode]);
 
   function spawnCard(type: CardType) {
     const w = type === "link_list" ? 280 : 320;
@@ -86,6 +108,11 @@ export function CardPalette({ boardId }: Props) {
     pendingFile.current = null;
   }
 
+  const transitionDuration = prefersReducedMotion ? "0ms" : "200ms";
+  const collapsedMaxWidth = mode === "edit" ? "none" : "0px";
+  const collapsedOpacity = mode === "edit" ? 1 : 0;
+  const collapsedPointerEvents = mode === "edit" ? "auto" : "none";
+
   return (
     <>
       <input
@@ -96,75 +123,221 @@ export function CardPalette({ boardId }: Props) {
         onChange={handleFileChosen}
       />
       <div
-        className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-2xl z-30"
+        className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-0 rounded-2xl z-30"
         style={{
           backdropFilter: "blur(20px)",
           background: "var(--color-surface-glass)",
-          border: "1px solid var(--color-border)",
+          border: "1px solid var(--glass-border)",
           boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
         }}
         aria-label="Card palette"
       >
-        {PALETTE_ITEMS.map(({ type, icon, label }) => (
+        {/* Mode segment — always visible, neumorphic inset pill */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "4px",
+            borderRadius: 12,
+            background: "var(--color-surface-glass)",
+            boxShadow: "inset 0 2px 6px rgba(0,0,0,0.14)",
+            marginRight: 4,
+          }}
+        >
+          {[
+            { m: "read", Icon: Hand, label: "Read (H)", title: "Read mode: pan & zoom only" },
+            { m: "edit", Icon: MousePointer2, label: "Edit (V)", title: "Edit mode: full interaction" },
+          ].map(({ m, Icon, label, title }) => (
+            <button
+              key={m}
+              onClick={() => setMode(m as "read" | "edit")}
+              title={title}
+              aria-label={label}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 44,
+                minWidth: 44,
+                padding: 8,
+                borderRadius: 8,
+                border: "none",
+                background: mode === m ? "var(--color-primary)" : "transparent",
+                color: mode === m ? "#fff" : "var(--color-text-muted)",
+                cursor: "pointer",
+                transition: `background 150ms, color 150ms`,
+              }}
+            >
+              <Icon size={16} />
+            </button>
+          ))}
+        </div>
+
+        {/* Collapsible content group — notebook, todo, bookmark, links */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            maxWidth: collapsedMaxWidth,
+            opacity: collapsedOpacity,
+            transition: `max-width ${transitionDuration}, opacity ${transitionDuration}`,
+            overflow: "hidden",
+            pointerEvents: collapsedPointerEvents,
+            paddingLeft: 4,
+            paddingRight: 4,
+          }}
+        >
+          {PALETTE_ITEMS.map(({ type, icon }) => (
+            <button
+              key={type}
+              onClick={() => spawnCard(type)}
+              title={type.charAt(0).toUpperCase() + type.slice(1).replace("_", " ")}
+              className="flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
+              style={{
+                minHeight: 44,
+                minWidth: 44,
+                padding: 8,
+                borderRadius: 8,
+                background: "transparent",
+                color: "var(--color-text-muted)",
+                border: "none",
+              }}
+              aria-label={`Add ${type.replace("_", " ")} card`}
+            >
+              {icon}
+            </button>
+          ))}
+        </div>
+
+        {/* Divider */}
+        <div
+          style={{
+            maxWidth: collapsedMaxWidth,
+            opacity: collapsedOpacity,
+            transition: `max-width ${transitionDuration}, opacity ${transitionDuration}`,
+            overflow: "hidden",
+            pointerEvents: collapsedPointerEvents,
+          }}
+          aria-hidden
+        >
+          <div style={{ width: 1, height: 32, background: "var(--glass-border)", margin: "0 4px" }} />
+        </div>
+
+        {/* Collapsible media group — image, audio, file */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            maxWidth: collapsedMaxWidth,
+            opacity: collapsedOpacity,
+            transition: `max-width ${transitionDuration}, opacity ${transitionDuration}`,
+            overflow: "hidden",
+            pointerEvents: collapsedPointerEvents,
+            paddingLeft: 4,
+            paddingRight: 4,
+          }}
+        >
           <button
-            key={type}
-            onClick={() => spawnCard(type)}
-            title={`Add ${label}`}
-            className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
-            style={{ color: "var(--color-text-muted)", background: "transparent" }}
-            aria-label={`Add ${label} card`}
+            onClick={() => openFilePicker("image/*")}
+            title="Upload image"
+            className="flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
+            style={{
+              minHeight: 44,
+              minWidth: 44,
+              padding: 8,
+              borderRadius: 8,
+              background: "transparent",
+              color: "var(--color-text-muted)",
+              border: "none",
+            }}
+            aria-label="Upload image"
           >
-            {icon}
-            <span className="text-xs font-medium">{label}</span>
+            <ImageIcon size={16} />
           </button>
-        ))}
 
-        <div className="w-px h-8 mx-1" style={{ background: "var(--color-border)" }} aria-hidden />
+          <button
+            onClick={() => openFilePicker("audio/*")}
+            title="Upload audio"
+            className="flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
+            style={{
+              minHeight: 44,
+              minWidth: 44,
+              padding: 8,
+              borderRadius: 8,
+              background: "transparent",
+              color: "var(--color-text-muted)",
+              border: "none",
+            }}
+            aria-label="Upload audio"
+          >
+            <Music size={16} />
+          </button>
 
-        <button
-          onClick={() => openFilePicker("image/*")}
-          title="Upload image"
-          className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
-          style={{ color: "var(--color-text-muted)", background: "transparent" }}
-          aria-label="Upload image"
+          <button
+            onClick={() => openFilePicker("*/*")}
+            title="Upload file"
+            className="flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
+            style={{
+              minHeight: 44,
+              minWidth: 44,
+              padding: 8,
+              borderRadius: 8,
+              background: "transparent",
+              color: "var(--color-text-muted)",
+              border: "none",
+            }}
+            aria-label="Upload file"
+          >
+            <Paperclip size={16} />
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div
+          style={{
+            maxWidth: collapsedMaxWidth,
+            opacity: collapsedOpacity,
+            transition: `max-width ${transitionDuration}, opacity ${transitionDuration}`,
+            overflow: "hidden",
+            pointerEvents: collapsedPointerEvents,
+          }}
+          aria-hidden
         >
-          <ImageIcon size={18} />
-          <span className="text-xs font-medium">Image</span>
-        </button>
+          <div style={{ width: 1, height: 32, background: "var(--glass-border)", margin: "0 4px" }} />
+        </div>
 
-        <button
-          onClick={() => openFilePicker("audio/*")}
-          title="Upload audio"
-          className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
-          style={{ color: "var(--color-text-muted)", background: "transparent" }}
-          aria-label="Upload audio"
+        {/* Collapsible Add button — primary */}
+        <div
+          style={{
+            maxWidth: collapsedMaxWidth,
+            opacity: collapsedOpacity,
+            transition: `max-width ${transitionDuration}, opacity ${transitionDuration}`,
+            overflow: "hidden",
+            pointerEvents: collapsedPointerEvents,
+            paddingRight: 8,
+          }}
         >
-          <Music size={18} />
-          <span className="text-xs font-medium">Audio</span>
-        </button>
-
-        <button
-          onClick={() => openFilePicker("*/*")}
-          title="Upload file"
-          className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
-          style={{ color: "var(--color-text-muted)", background: "transparent" }}
-          aria-label="Upload file"
-        >
-          <Paperclip size={18} />
-          <span className="text-xs font-medium">File</span>
-        </button>
-
-        <div className="w-px h-8 mx-1" style={{ background: "var(--color-border)" }} aria-hidden />
-
-        <button
-          className="flex items-center gap-1 px-3 py-2 rounded-xl cursor-pointer text-sm font-medium transition-all duration-150 hover:scale-105 active:scale-95"
-          style={{ background: "var(--color-primary)", color: "#fff" }}
-          onClick={() => spawnCard("notebook")}
-          aria-label="Quick add notebook"
-        >
-          <Plus size={16} />
-          Add
-        </button>
+          <button
+            className="flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-105 active:scale-95"
+            style={{
+              minHeight: 44,
+              minWidth: 44,
+              padding: 8,
+              borderRadius: 8,
+              background: "var(--color-primary)",
+              color: "#fff",
+              border: "none",
+            }}
+            onClick={() => spawnCard("notebook")}
+            aria-label="Quick add notebook"
+            title="Quick add notebook"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
       </div>
     </>
   );

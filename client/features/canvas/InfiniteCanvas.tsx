@@ -7,6 +7,7 @@ import { Card } from "@/lib/api/schemas";
 import { CardPalette } from "@/features/cards/CardPalette";
 import { GroupToolbar } from "./GroupToolbar";
 import { useCanvasDropImport } from "./useCanvasDropImport";
+import { useCanvasPaste } from "./useCanvasPaste";
 import { useMarqueeSelect } from "./useMarqueeSelect";
 import { useCanvasKeyboard } from "./useCanvasKeyboard";
 import { ShortcutsModal } from "@/components/ui/ShortcutsModal";
@@ -23,6 +24,7 @@ export function InfiniteCanvas({ cards, boardId }: Props) {
   const marqueeHandlers = useMarqueeSelect(cards);
   const { onPointerDown, onPointerMove, onPointerUp } = useCanvasPointer(containerRef, marqueeHandlers);
   const { onDragOver, onDrop } = useCanvasDropImport(boardId);
+  useCanvasPaste(boardId);
 
   useCanvasKeyboard({
     boardId,
@@ -50,7 +52,7 @@ export function InfiniteCanvas({ cards, boardId }: Props) {
       {/* Group selection toolbar */}
       <GroupToolbar boardId={boardId} cards={cards} />
 
-      {/* Floating card creation palette */}
+      {/* Floating card creation palette — always renders; collapses in read mode */}
       <CardPalette boardId={boardId} />
 
       {/* Shortcuts cheatsheet */}

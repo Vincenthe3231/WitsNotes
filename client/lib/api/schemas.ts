@@ -112,3 +112,13 @@ export type CreateCardInput = z.infer<typeof CreateCardSchema>;
 
 export const UpdateCardSchema = CreateCardSchema.partial().omit({ type: true });
 export type UpdateCardInput = z.infer<typeof UpdateCardSchema>;
+
+// API Error
+export const ApiErrorSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    details: z.unknown().nullish().transform((v) => v ?? null),
+  }),
+});
+export type ApiErrorBody = z.infer<typeof ApiErrorSchema>;

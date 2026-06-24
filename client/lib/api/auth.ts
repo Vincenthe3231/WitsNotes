@@ -1,19 +1,16 @@
 import { apiClient } from "./client";
-import { User, UserSchema } from "./schemas";
+import { User, UserSchema, LoginSchema, LoginInput, RegisterSchema, RegisterInput } from "./schemas";
 
-export async function login(input: { email: string; password: string }): Promise<User> {
-  const res = await apiClient.post("/login", input);
+export async function login(input: LoginInput): Promise<User> {
+  const validated = LoginSchema.parse(input);
+  const res = await apiClient.post("/login", validated);
   // Proxy strips token, returns { user }
   return UserSchema.parse(res.data.user);
 }
 
-export async function register(input: {
-  name: string;
-  email: string;
-  password: string;
-  password_confirmation: string;
-}): Promise<User> {
-  const res = await apiClient.post("/register", input);
+export async function register(input: RegisterInput): Promise<User> {
+  const validated = RegisterSchema.parse(input);
+  const res = await apiClient.post("/register", validated);
   return UserSchema.parse(res.data.user);
 }
 

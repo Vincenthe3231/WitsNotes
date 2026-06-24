@@ -62,7 +62,7 @@ export function ImageCard({ card }: Props) {
           src={content.url}
           alt={card.title ?? content.original_name ?? "image"}
           loading="lazy"
-          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
       </div>
 

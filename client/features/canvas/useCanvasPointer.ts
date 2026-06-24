@@ -20,6 +20,7 @@ export function useCanvasPointer(
   const panBy = useCanvasStore((s) => s.panBy);
   const zoomTo = useCanvasStore((s) => s.zoomTo);
   const clearSelection = useCanvasStore((s) => s.clearSelection);
+  const mode = useCanvasStore((s) => s.mode);
 
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
@@ -56,7 +57,7 @@ export function useCanvasPointer(
   // Shift+drag → marquee (no pan, no clearSelection)
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (marquee && e.shiftKey) {
+      if (marquee && e.shiftKey && mode === "edit") {
         marquee.onPointerDown(e);
         return;
       }
@@ -66,7 +67,7 @@ export function useCanvasPointer(
       if (containerRef.current) containerRef.current.dataset.panning = "true";
       clearSelection();
     },
-    [clearSelection, containerRef, marquee]
+    [clearSelection, containerRef, marquee, mode]
   );
 
   const onPointerMove = useCallback(

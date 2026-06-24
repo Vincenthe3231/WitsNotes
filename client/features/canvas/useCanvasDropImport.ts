@@ -11,16 +11,19 @@ import { Card } from "@/lib/api/schemas";
 export function useCanvasDropImport(boardId: string) {
   const viewport = useCanvasStore((s) => s.viewport);
   const upsertLocalCard = useCanvasStore((s) => s.upsertLocalCard);
+  const mode = useCanvasStore((s) => s.mode);
   const { mutateAsync: createCardAsync } = useCreateCard();
   const { mutate: updateCard } = useUpdateCard();
 
   const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (mode === "read") return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
-  }, []);
+  }, [mode]);
 
   const handleFile = useCallback(
     async (file: File, canvasX: number, canvasY: number) => {
+      if (mode === "read") return;
       const type = mimeToCardType(file.type);
       const w = 320;
       const h = type === "audio" || type === "file" ? 180 : 240;
@@ -41,16 +44,17 @@ export function useCanvasDropImport(boardId: string) {
 
       await uploadCardAttachment({ boardId, card, file, upsertLocalCard, updateCard: (vars) => updateCard(vars) });
     },
-    [boardId, createCardAsync, updateCard, upsertLocalCard]
+    [boardId, mode, createCardAsync, updateCard, upsertLocalCard]
   );
 
   const onDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
+      if (mode === "read") return;
       e.preventDefault();
       const pos = screenToCanvas(e.clientX, e.clientY, viewport);
       Array.from(e.dataTransfer.files).forEach((file) => handleFile(file, pos.x, pos.y));
     },
-    [handleFile, viewport]
+    [handleFile, mode, viewport]
   );
 
   return { onDragOver, onDrop };

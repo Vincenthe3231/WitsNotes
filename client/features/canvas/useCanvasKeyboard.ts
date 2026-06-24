@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useCanvasStore } from "@/stores/canvasStore";
+import { useConfirmStore } from "@/stores/confirmStore";
 import { useDeleteCard, useCreateCard } from "@/lib/api/hooks";
 import { Card } from "@/lib/api/schemas";
 
@@ -26,36 +27,47 @@ export function useCanvasKeyboard({ boardId, cards, onOpenCheatsheet }: Opts) {
   const clearSelection = useCanvasStore((s) => s.clearSelection);
   const setSelection = useCanvasStore((s) => s.setSelection);
   const removeLocalCard = useCanvasStore((s) => s.removeLocalCard);
+  const mode = useCanvasStore((s) => s.mode);
+  const confirm = useConfirmStore((s) => s.confirm);
   const { mutate: deleteCard } = useDeleteCard();
   const { mutate: createCard } = useCreateCard();
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
+    const handler = async (e: KeyboardEvent) => {
       if (isInputFocused()) return;
 
-      // ? → cheatsheet
+      // ? → cheatsheet (always allowed)
       if (e.key === "?" || (e.shiftKey && e.key === "/")) {
         e.preventDefault();
         onOpenCheatsheet();
         return;
       }
 
-      // Esc → clear selection
+      // Esc → clear selection (always allowed)
       if (e.key === "Escape") {
         clearSelection();
         return;
       }
 
-      // Cmd/Ctrl+A → select all
+      // Cmd/Ctrl+A → select all (read mode blocks)
       if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+        if (mode === "read") return;
         e.preventDefault();
         setSelection(cards.map((c) => c.id));
         return;
       }
 
-      // Delete/Backspace → delete selected
+      // Delete/Backspace → delete selected (read mode blocks)
       if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.size > 0) {
+        if (mode === "read") return;
         e.preventDefault();
+        const confirmed = await confirm({
+          title: "Delete cards",
+          message: `Delete ${selectedIds.size} card${selectedIds.size > 1 ? "s" : ""}? This action cannot be undone.`,
+          danger: true,
+        });
+        if (!confirmed) return;
+
         selectedIds.forEach((id) => {
           removeLocalCard(id);
           deleteCard({ boardId, cardId: id });
@@ -64,8 +76,8 @@ export function useCanvasKeyboard({ boardId, cards, onOpenCheatsheet }: Opts) {
         return;
       }
 
-      // Cmd/Ctrl+D → duplicate selected
-      if ((e.metaKey || e.ctrlKey) && e.key === "d" && selectedIds.size > 0) {
+      // Cmd/Ctrl+D → duplicate selected (edit mode only)
+      if ((e.metaKey || e.ctrlKey) && e.key === "d" && selectedIds.size > 0 && mode === "edit") {
         e.preventDefault();
         const toClone = cards.filter((c) => selectedIds.has(c.id));
         toClone.forEach((c) => {
@@ -89,5 +101,5 @@ export function useCanvasKeyboard({ boardId, cards, onOpenCheatsheet }: Opts) {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [boardId, cards, selectedIds, clearSelection, setSelection, removeLocalCard, deleteCard, createCard, onOpenCheatsheet]);
+  }, [boardId, cards, selectedIds, mode, clearSelection, setSelection, removeLocalCard, deleteCard, createCard, confirm, onOpenCheatsheet]);
 }

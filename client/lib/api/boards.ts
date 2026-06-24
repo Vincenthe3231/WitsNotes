@@ -1,5 +1,16 @@
 import { apiClient } from "./client";
-import { Board, BoardSchema, Card, CardSchema, CreateBoardInput, CreateCardInput, UpdateCardInput } from "./schemas";
+import {
+  Board,
+  BoardSchema,
+  Card,
+  CardSchema,
+  CreateBoardInput,
+  CreateBoardSchema,
+  CreateCardInput,
+  CreateCardSchema,
+  UpdateCardInput,
+  UpdateCardSchema,
+} from "./schemas";
 import { z } from "zod";
 
 export async function getBoards(): Promise<Board[]> {
@@ -13,12 +24,14 @@ export async function getBoard(id: string): Promise<Board & { cards: Card[] }> {
 }
 
 export async function createBoard(input: CreateBoardInput): Promise<Board> {
-  const res = await apiClient.post("/boards", input);
+  const validated = CreateBoardSchema.parse(input);
+  const res = await apiClient.post("/boards", validated);
   return BoardSchema.parse(res.data);
 }
 
 export async function updateBoard(id: string, input: Partial<CreateBoardInput>): Promise<Board> {
-  const res = await apiClient.patch(`/boards/${id}`, input);
+  const validated = CreateBoardSchema.partial().parse(input);
+  const res = await apiClient.patch(`/boards/${id}`, validated);
   return BoardSchema.parse(res.data);
 }
 
@@ -33,7 +46,8 @@ export async function getCards(boardId: string): Promise<Card[]> {
 }
 
 export async function createCard(boardId: string, input: CreateCardInput): Promise<Card> {
-  const res = await apiClient.post(`/boards/${boardId}/cards`, input);
+  const validated = CreateCardSchema.parse(input);
+  const res = await apiClient.post(`/boards/${boardId}/cards`, validated);
   return CardSchema.parse(res.data);
 }
 
@@ -41,7 +55,8 @@ export async function updateCard(
   cardId: string,
   input: UpdateCardInput & { base_updated_at?: string }
 ): Promise<Card> {
-  const res = await apiClient.patch(`/cards/${cardId}`, input);
+  const validated = UpdateCardSchema.extend({ base_updated_at: z.string().optional() }).parse(input);
+  const res = await apiClient.patch(`/cards/${cardId}`, validated);
   return CardSchema.parse(res.data);
 }
 

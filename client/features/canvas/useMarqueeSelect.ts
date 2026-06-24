@@ -16,6 +16,7 @@ export function useMarqueeSelect(cards: Card[]) {
   const viewport = useCanvasStore((s) => s.viewport);
   const setSelection = useCanvasStore((s) => s.setSelection);
   const setMarquee = useCanvasStore((s) => s.setMarquee);
+  const mode = useCanvasStore((s) => s.mode);
 
   const startRef = useRef<{ x: number; y: number } | null>(null);
   const curRef = useRef<{ x: number; y: number } | null>(null);
@@ -23,7 +24,7 @@ export function useMarqueeSelect(cards: Card[]) {
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>): boolean => {
-      if (!e.shiftKey) return false;
+      if (!e.shiftKey || mode === "read") return false;
       const pos = screenToCanvas(e.clientX, e.clientY, viewport);
       startRef.current = pos;
       curRef.current = pos;
@@ -32,7 +33,7 @@ export function useMarqueeSelect(cards: Card[]) {
       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
       return true;
     },
-    [viewport, setMarquee]
+    [viewport, setMarquee, mode]
   );
 
   const onPointerMove = useCallback(

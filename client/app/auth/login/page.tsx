@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { login } from "@/lib/api/auth";
 import { useAuthStore } from "@/stores/authStore";
+import { LoginSchema } from "@/lib/api/schemas";
+import { ApiError } from "@/lib/api/errors";
 
 function LoginForm() {
   const router = useRouter();
@@ -11,20 +13,37 @@ function LoginForm() {
   const setUser = useAuthStore((s) => s.setUser);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [generalError, setGeneralError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    setErrors({});
+    setGeneralError(null);
     setLoading(true);
+
+    // Client-side validation
+    const validation = LoginSchema.safeParse({ email, password });
+    if (!validation.success) {
+      const fieldErrors = validation.error.flatten().fieldErrors;
+      setErrors(fieldErrors as Record<string, string[]>);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const user = await login({ email, password });
+      const user = await login(validation.data);
       setUser(user);
       const from = searchParams.get("from") ?? "/";
       router.replace(from);
-    } catch {
-      setError("Invalid email or password.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && err.details) {
+        // Map server validation errors
+        setErrors(err.details as Record<string, string[]>);
+      } else {
+        setGeneralError("Invalid email or password.");
+      }
     } finally {
       setLoading(false);
     }
@@ -34,8 +53,8 @@ function LoginForm() {
     <div className="glass-card w-full max-w-sm p-8 rounded-2xl">
       <h1 className="text-2xl font-semibold mb-6" style={{ color: "var(--color-text)" }}>Sign in to WitsNote</h1>
 
-      {error && (
-        <p className="mb-4 text-sm text-red-500" role="alert" aria-live="polite">{error}</p>
+      {generalError && (
+        <p className="mb-4 text-sm text-red-500" role="alert" aria-live="polite">{generalError}</p>
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -48,8 +67,19 @@ function LoginForm() {
             required
             autoComplete="email"
             className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus-visible:ring-2"
-            style={{ background: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text)" }}
+            style={{
+              background: "var(--color-surface)",
+              borderColor: errors.email ? "#ef4444" : "var(--color-border)",
+              color: "var(--color-text)",
+            }}
+            aria-invalid={!!errors.email}
+            aria-describedby={errors.email ? "email-error" : undefined}
           />
+          {errors.email && (
+            <p id="email-error" className="mt-1 text-xs text-red-500">
+              {errors.email[0]}
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-text-muted)" }}>Password</label>
@@ -60,8 +90,19 @@ function LoginForm() {
             required
             autoComplete="current-password"
             className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus-visible:ring-2"
-            style={{ background: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text)" }}
+            style={{
+              background: "var(--color-surface)",
+              borderColor: errors.password ? "#ef4444" : "var(--color-border)",
+              color: "var(--color-text)",
+            }}
+            aria-invalid={!!errors.password}
+            aria-describedby={errors.password ? "password-error" : undefined}
           />
+          {errors.password && (
+            <p id="password-error" className="mt-1 text-xs text-red-500">
+              {errors.password[0]}
+            </p>
+          )}
         </div>
         <button
           type="submit"

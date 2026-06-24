@@ -4,6 +4,7 @@ import { memo, useCallback, useState, useRef } from "react";
 import { GripVertical, Trash2, ExternalLink, Lock, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCanvasStore } from "@/stores/canvasStore";
+import { useConfirmStore } from "@/stores/confirmStore";
 import { useUpdateCard, useDeleteCard } from "@/lib/api/hooks";
 import { Card, NotebookTab } from "@/lib/api/schemas";
 import { flatten } from "@/lib/notebook/tree";
@@ -83,8 +84,10 @@ function CardShellInner({ card, boardId }: Props) {
   const selectCard = useCanvasStore((s) => s.selectCard);
   const upsertLocalCard = useCanvasStore((s) => s.upsertLocalCard);
   const removeLocalCard = useCanvasStore((s) => s.removeLocalCard);
+  const mode = useCanvasStore((s) => s.mode);
   const { mutate: updateCard } = useUpdateCard();
   const { mutate: deleteCard } = useDeleteCard();
+  const confirm = useConfirmStore((s) => s.confirm);
   const retryInputRef = useRef<HTMLInputElement>(null);
 
   const isSelected = selectedIds.has(card.id);
@@ -144,7 +147,9 @@ function CardShellInner({ card, boardId }: Props) {
 
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation();
-    selectCard(card.id, e.metaKey || e.shiftKey);
+    if (mode === "edit") {
+      selectCard(card.id, e.metaKey || e.shiftKey);
+    }
   }
 
   function openNotebook() {
@@ -195,7 +200,7 @@ function CardShellInner({ card, boardId }: Props) {
       <div
         style={{
           height: 28,
-          cursor: "grab",
+          cursor: mode === "read" ? "default" : "grab",
           display: "flex",
           alignItems: "center",
           padding: "0 8px",
@@ -206,9 +211,9 @@ function CardShellInner({ card, boardId }: Props) {
           borderBottom: "1px solid var(--glass-border)",
           userSelect: "none",
         }}
-        onPointerDown={onDragDown}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragUp}
+        onPointerDown={mode === "edit" ? onDragDown : undefined}
+        onPointerMove={mode === "edit" ? onDragMove : undefined}
+        onPointerUp={mode === "edit" ? onDragUp : undefined}
       >
         <GripVertical size={13} style={{ color: "var(--color-text-muted)", opacity: 0.5, flexShrink: 0 }} />
 
@@ -224,11 +229,13 @@ function CardShellInner({ card, boardId }: Props) {
           />
         ) : (
           <span
-            style={{ fontSize: 11, color: "var(--color-text-muted)", opacity: 0.8, textTransform: "capitalize", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            style={{ fontSize: 11, color: "var(--color-text-muted)", opacity: 0.8, textTransform: "capitalize", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: mode === "edit" ? "text" : "default" }}
             onDoubleClick={(e) => {
-              e.stopPropagation();
-              setTitleDraft(card.title ?? (isNotebook ? "Notebook" : card.type));
-              setEditingTitle(true);
+              if (mode === "edit") {
+                e.stopPropagation();
+                setTitleDraft(card.title ?? (isNotebook ? "Notebook" : card.type));
+                setEditingTitle(true);
+              }
             }}
           >
             {displayTitle}
@@ -253,18 +260,27 @@ function CardShellInner({ card, boardId }: Props) {
           </button>
         )}
 
-        <button
-          style={{ padding: "2px 4px", border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", borderRadius: 4, flexShrink: 0 }}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            removeLocalCard(card.id);
-            deleteCard({ boardId, cardId: card.id });
-          }}
-          title="Delete card"
-        >
-          <Trash2 size={12} style={{ color: "var(--color-text-muted)", opacity: 0.5 }} />
-        </button>
+        {mode === "edit" && (
+          <button
+            style={{ padding: "2px 4px", border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", borderRadius: 4, flexShrink: 0 }}
+            onPointerDown={async (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              const confirmed = await confirm({
+                title: "Delete card",
+                message: "This action cannot be undone.",
+                danger: true,
+              });
+              if (confirmed) {
+                removeLocalCard(card.id);
+                deleteCard({ boardId, cardId: card.id });
+              }
+            }}
+            title="Delete card"
+          >
+            <Trash2 size={12} style={{ color: "var(--color-text-muted)", opacity: 0.5 }} />
+          </button>
+        )}
       </div>
 
       {/* Card content */}
@@ -309,7 +325,7 @@ function CardShellInner({ card, boardId }: Props) {
       />
 
       {/* Corner-only L-bracket resize handles — outside clip div so overflow:hidden doesn't cut them */}
-      {isSelected && CORNER_HANDLES.map(({ handle, style, cursor }) => (
+      {isSelected && mode === "edit" && CORNER_HANDLES.map(({ handle, style, cursor }) => (
         <CornerHandle
           key={handle}
           handle={handle}

@@ -4,6 +4,13 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use App\Support\ApiError;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -19,4 +26,67 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+
+        $exceptions->render(function (ValidationException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiError::render(
+                    'validation_failed',
+                    'Validation failed',
+                    422,
+                    $e->errors()
+                );
+            }
+        });
+
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiError::render(
+                    'unauthenticated',
+                    'Unauthenticated',
+                    401
+                );
+            }
+        });
+
+        $exceptions->render(function (AuthorizationException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiError::render(
+                    'forbidden',
+                    'Forbidden',
+                    403
+                );
+            }
+        });
+
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiError::render(
+                    'not_found',
+                    'Not found',
+                    404
+                );
+            }
+        });
+
+        $exceptions->render(function (MethodNotAllowedHttpException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiError::render(
+                    'method_not_allowed',
+                    'Method not allowed',
+                    405
+                );
+            }
+        });
+
+        $exceptions->render(function (Throwable $e, Request $request) {
+            if ($request->is('api/*')) {
+                $debug = config('app.debug');
+                return ApiError::render(
+                    'server_error',
+                    'Server error',
+                    500,
+                    $debug ? ['message' => $e->getMessage()] : null
+                );
+            }
+        });
     })->create();

@@ -2,6 +2,7 @@
 
 import { Trash2, Copy, ArrowUp, ArrowDown } from "lucide-react";
 import { useCanvasStore } from "@/stores/canvasStore";
+import { useConfirmStore } from "@/stores/confirmStore";
 import { useDeleteCard, useCreateCard, useUpdateCard } from "@/lib/api/hooks";
 import { Card } from "@/lib/api/schemas";
 
@@ -12,18 +13,27 @@ interface Props {
 
 export function GroupToolbar({ boardId, cards }: Props) {
   const selectedIds = useCanvasStore((s) => s.selectedIds);
+  const mode = useCanvasStore((s) => s.mode);
   const clearSelection = useCanvasStore((s) => s.clearSelection);
   const removeLocalCard = useCanvasStore((s) => s.removeLocalCard);
   const upsertLocalCard = useCanvasStore((s) => s.upsertLocalCard);
+  const confirm = useConfirmStore((s) => s.confirm);
   const { mutate: deleteCard } = useDeleteCard();
   const { mutate: createCard } = useCreateCard();
   const { mutate: updateCard } = useUpdateCard();
 
-  if (selectedIds.size === 0) return null;
+  if (selectedIds.size === 0 || mode === "read") return null;
 
   const selected = cards.filter((c) => selectedIds.has(c.id));
 
-  function handleDelete() {
+  async function handleDelete() {
+    const confirmed = await confirm({
+      title: "Delete cards",
+      message: `Delete ${selectedIds.size} card${selectedIds.size > 1 ? "s" : ""}? This action cannot be undone.`,
+      danger: true,
+    });
+    if (!confirmed) return;
+
     selected.forEach((c) => {
       removeLocalCard(c.id);
       deleteCard({ boardId, cardId: c.id });

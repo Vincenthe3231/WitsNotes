@@ -18,6 +18,8 @@ if (typeof window !== "undefined") {
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useState } from "react";
 import { CommandPalette } from "@/components/ui/CommandPalette";
+import { Toaster } from "@/components/ui/Toaster";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { idbPersister } from "@/lib/api/persister";
 import { registerMutationDefaults } from "@/lib/api/hooks";
 
@@ -58,6 +60,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     >
       {children}
       <CommandPalette />
+      <Toaster />
+      <ConfirmDialog />
       {process.env.NODE_ENV === "development" && <ReactQueryDevtools initialIsOpen={false} />}
     </PersistQueryClientProvider>
   );
