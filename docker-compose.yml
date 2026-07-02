@@ -27,6 +27,20 @@ services:
       timeout: 5s
       retries: 5
 
+  collab:
+    build: ./collab
+    env_file: ./collab/.env.local
+    environment:
+      COLLAB_PORT: 1234
+      LARAVEL_INTERNAL_URL: http://host.docker.internal:8000/api/internal
+    ports:
+      - "1234:1234"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1234/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
