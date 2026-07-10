@@ -37,7 +37,6 @@ export function CanvasLayer({ cards: restCards, boardId }: Props) {
   const viewport = useCanvasStore((s) => s.viewport);
   const localCards = useCanvasStore((s) => s.localCards);
   const marquee = useCanvasStore((s) => s.marquee);
-  const upsertLocalCards = useCanvasStore((s) => s.upsertLocalCards);
   const connectingFrom = useCanvasStore((s) => s.connectingFrom);
   const connectingCursor = useCanvasStore((s) => s.connectingCursor);
   const { data: connections = [] } = useConnections(boardId);
@@ -50,12 +49,22 @@ export function CanvasLayer({ cards: restCards, boardId }: Props) {
 
   // Seed localCards with server cards so group-drag snapshot has positions for all selected cards.
   // Only adds cards missing from the map — never overwrites optimistic updates.
+  // Prune any localCards no longer on server (except card currently being dragged).
   useEffect(() => {
     if (isCollab) return; // Y.Doc is source of truth; no need to seed localCards
-    const { localCards: current } = useCanvasStore.getState();
+    const state = useCanvasStore.getState();
+    const { localCards: current, draggingId } = state;
+
     const unseen = cards.filter((c) => !current.has(c.id));
-    if (unseen.length > 0) upsertLocalCards(unseen);
-  }, [cards, upsertLocalCards, isCollab]);
+    if (unseen.length > 0) state.upsertLocalCards(unseen);
+
+    const serverIds = new Set(cards.map((c) => c.id));
+    current.forEach((_, id) => {
+      if (!serverIds.has(id) && id !== draggingId) {
+        state.removeLocalCard(id);
+      }
+    });
+  }, [cards, isCollab]);
 
   const merged = useMemo(() => {
     if (isCollab) return cards; // Y.Doc already has merged state

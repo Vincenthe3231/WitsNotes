@@ -146,7 +146,7 @@ export function registerMutationDefaults(qc: QueryClient) {
         boardKeys.detail(boardId),
         (old: (Board & { cards: Card[] }) | undefined) =>
           old
-            ? { ...old, cards: old.cards.map((c) => (c.id === id ? { ...c, ...input } : c)) }
+            ? { ...old, cards: old.cards.map((c) => (c.id === id ? { ...c, ...input, updated_at: new Date().toISOString() } : c)) }
             : old
       );
       return { snapshot };
