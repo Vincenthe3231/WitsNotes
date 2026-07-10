@@ -73,6 +73,19 @@ export const ConnectionSchema = z.object({
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 
+// Templates
+export const TemplateSchema = z.object({
+  id: z.string().uuid(),
+  scope: z.string(),
+  category: z.string(),
+  name: z.string(),
+  preview_url: z.string().nullish().transform(v => v ?? null),
+  doc: z.record(z.string(), z.unknown()),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type Template = z.infer<typeof TemplateSchema>;
+
 export const CreateConnectionSchema = z.object({
   from_card_id: z.string().uuid(),
   to_card_id: z.string().uuid(),

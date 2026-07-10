@@ -44,7 +44,11 @@ class BoardController extends Controller
 
         $board = $request->user()->boards()->create($data);
 
-        return response()->json($board, 201);
+        // Reload from DB — omitted fields (e.g. is_vault when not passed) only
+        // get their column default applied server-side, not reflected on the
+        // in-memory model create() returns. The client's BoardSchema requires
+        // is_vault, so returning the un-refreshed model fails validation there.
+        return response()->json($board->fresh(), 201);
     }
 
     public function show(Request $request, Board $board): JsonResponse

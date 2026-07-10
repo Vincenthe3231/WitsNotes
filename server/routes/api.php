@@ -8,6 +8,7 @@ use App\Http\Controllers\CollabController;
 use App\Http\Controllers\CollabInternalController;
 use App\Http\Controllers\BoardMemberController;
 use App\Http\Controllers\ConnectionController;
+use App\Http\Controllers\TemplateController;
 use App\Http\Controllers\UnfurlController;
 use App\Http\Middleware\CollabInternalAuth;
 use Illuminate\Support\Facades\Route;
@@ -41,6 +42,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/boards/{board}/members',          [BoardMemberController::class, 'store']);
     Route::patch('/boards/{board}/members/{member}',[BoardMemberController::class, 'update']);
     Route::delete('/boards/{board}/members/{member}',[BoardMemberController::class, 'destroy']);
+
+    Route::get('/templates',                [TemplateController::class, 'index']);
+    Route::post('/templates/{template}/use', [TemplateController::class, 'use']);
 
     Route::get('/unfurl',       UnfurlController::class);
     Route::post('/attachments',             [AttachmentController::class, 'store']);

@@ -7,6 +7,7 @@ import {
   getBoard, getBoards, updateBoard, updateCard, searchCards, unfurlUrl,
   getConnections, createConnection, deleteConnection,
 } from "./boards";
+import { getTemplates, applyTemplate } from "./templates";
 import { Board, Card, CreateBoardInput, CreateCardInput, CreateConnectionInput, UpdateCardInput } from "./schemas";
 
 // Boards
@@ -306,5 +307,23 @@ export function useDeleteConnection(boardId: string) {
   return useMutation({
     mutationFn: (connectionId: string) => deleteConnection(connectionId),
     onSuccess: () => qc.invalidateQueries({ queryKey: connectionKeys.list(boardId) }),
+  });
+}
+
+// Templates
+export const templateKeys = {
+  all: ["templates"] as const,
+};
+
+export function useTemplates() {
+  return useQuery({ queryKey: templateKeys.all, queryFn: getTemplates });
+}
+
+export function useUseTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, title }: { templateId: string; title?: string }) =>
+      applyTemplate(templateId, title),
+    onSuccess: () => qc.invalidateQueries({ queryKey: boardKeys.all }),
   });
 }

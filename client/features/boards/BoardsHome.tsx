@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useBoards, useCreateBoard, useDeleteBoard } from "@/lib/api/hooks";
-import { Plus, Trash2, Layout, Users } from "lucide-react";
+import { Plus, Trash2, Layout, Users, LayoutTemplate } from "lucide-react";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { TemplateGalleryModal } from "@/components/ui/TemplateGalleryModal";
 
 export function BoardsHome() {
   useAuthGuard();
@@ -14,6 +15,7 @@ export function BoardsHome() {
   const { mutate: deleteBoard } = useDeleteBoard();
   const [newTitle, setNewTitle] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
 
   function handleCreate() {
     if (!newTitle.trim()) return;
@@ -37,15 +39,35 @@ export function BoardsHome() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold" style={{ color: "var(--color-text)" }}>Your Boards</h2>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition-all duration-150"
-          style={{ background: "var(--color-primary)", color: "#fff" }}
-        >
-          <Plus size={16} />
-          New Board
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTemplates(true)}
+            className="neu flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition-all duration-150"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            <LayoutTemplate size={16} />
+            From template
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition-all duration-150"
+            style={{ background: "var(--color-primary)", color: "#fff" }}
+          >
+            <Plus size={16} />
+            New Board
+          </button>
+        </div>
       </div>
+
+      {showTemplates && (
+        <TemplateGalleryModal
+          onClose={() => setShowTemplates(false)}
+          onCreated={(boardId) => {
+            setShowTemplates(false);
+            router.push(`/board/${boardId}`);
+          }}
+        />
+      )}
 
       {showCreate && (
         <div className="flex gap-2">
