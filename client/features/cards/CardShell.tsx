@@ -24,6 +24,7 @@ import { AudioCard } from "./AudioCard";
 import { FileCard } from "./FileCard";
 import { SketchCard } from "./SketchCardDynamic";
 import { TableCard } from "./TableCard";
+import { AnnotatePinCard } from "./AnnotatePinCard";
 import { uploadCardAttachment } from "@/lib/api/uploadCardAttachment";
 import { useBoardDocContext } from "@/lib/collab/BoardDocContext";
 import { ydocUpdateCard, ydocDeleteCard } from "@/lib/collab/ydocMutations";
@@ -43,6 +44,7 @@ const CARD_RENDERERS: Partial<Record<CardType, FC<CardRendererProps>>> = {
   file:      ({ card }) => <FileCard card={card} />,
   sketch:    SketchCard,
   table:     TableCard,
+  comment_anchor: AnnotatePinCard,
 };
 
 interface Props {
@@ -104,6 +106,7 @@ function CardShellInner({ card, boardId }: Props) {
 
   const isSelected = selectedIds.has(card.id);
   const isNotebook = displayCard.type === "notebook";
+  const isPin = displayCard.type === "comment_anchor";
   const cardContent = displayCard.content as { status?: string } | null;
   const showRetry = MEDIA_CARD_TYPES.has(displayCard.type) && cardContent?.status === "error";
   const retryAccept = displayCard.type === "audio" ? "audio/*" : displayCard.type === "image" || displayCard.type === "gif" ? "image/*" : "*/*";
@@ -218,6 +221,35 @@ function CardShellInner({ card, boardId }: Props) {
     : (displayCard.title ?? displayCard.type);
 
   const reminderBadge = getReminderBadge(displayCard);
+
+  // Annotate pins render as a bare marker — no header bar / resize chrome,
+  // since the whole point is a small unobtrusive dot pinned to a coordinate.
+  if (isPin) {
+    const PinRenderer = CARD_RENDERERS.comment_anchor;
+    return (
+      <div
+        className="absolute"
+        data-card-id={card.id}
+        style={{
+          left: displayCard.x,
+          top: displayCard.y,
+          width: displayCard.w,
+          height: displayCard.h,
+          zIndex: displayCard.z,
+          outline: isSelected ? "2px solid var(--color-primary)" : "none",
+          outlineOffset: 2,
+          borderRadius: "50%",
+        }}
+        onClick={handleClick}
+        onPointerDown={mode === "edit" ? onDragDown : undefined}
+        onPointerMove={mode === "edit" ? onDragMove : undefined}
+        onPointerUp={mode === "edit" ? onDragUp : undefined}
+        onPointerCancel={onDragCancel}
+      >
+        {PinRenderer && <PinRenderer card={displayCard} boardId={boardId} />}
+      </div>
+    );
+  }
 
   return (
     <div

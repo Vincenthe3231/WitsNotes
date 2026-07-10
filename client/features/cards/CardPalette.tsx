@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { FileText, CheckSquare, Bookmark, Link2, Plus, Image as ImageIcon, Music, Paperclip, Hand, MousePointer2, Pen, Table2 } from "lucide-react";
+import { FileText, CheckSquare, Bookmark, Link2, Plus, Image as ImageIcon, Music, Paperclip, Hand, MousePointer2, Pen, Table2, MapPin } from "lucide-react";
 import { useCreateCard, useUpdateCard } from "@/lib/api/hooks";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { Card, CardType } from "@/lib/api/schemas";
@@ -18,6 +18,7 @@ const PALETTE_ITEMS: { type: CardType; icon: React.ReactNode; label: string }[] 
   { type: "link_list", icon: <Link2 size={18} />,       label: "Links" },
   { type: "sketch",    icon: <Pen size={18} />,          label: "Sketch" },
   { type: "table",     icon: <Table2 size={18} />,       label: "Table" },
+  { type: "comment_anchor", icon: <MapPin size={18} />,  label: "Annotate pin" },
 ];
 
 export function mimeToCardType(mime: string): CardType {
@@ -62,8 +63,8 @@ export function CardPalette({ boardId }: Props) {
   }, [setMode]);
 
   async function spawnCard(type: CardType) {
-    const w = type === "link_list" ? 280 : type === "sketch" ? 360 : type === "table" ? 380 : 320;
-    const h = type === "link_list" ? 320 : type === "sketch" ? 280 : type === "table" ? 220 : 200;
+    const w = type === "link_list" ? 280 : type === "sketch" ? 360 : type === "table" ? 380 : type === "comment_anchor" ? 32 : 320;
+    const h = type === "link_list" ? 320 : type === "sketch" ? 280 : type === "table" ? 220 : type === "comment_anchor" ? 32 : 200;
     const center = canvasCenter(viewport);
     const x = Math.round(center.x - w / 2);
     const y = Math.round(center.y - h / 2);
