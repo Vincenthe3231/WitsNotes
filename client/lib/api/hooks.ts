@@ -226,3 +226,47 @@ export function useUnfurlUrl(url: string) {
     staleTime: 5 * 60_000,
   });
 }
+
+// Board members
+import { getBoardMembers, inviteBoardMember, updateBoardMemberRole, removeBoardMember } from "./boards";
+import { BoardMember } from "./schemas";
+
+export const memberKeys = {
+  list: (boardId: string) => ["boards", boardId, "members"] as const,
+};
+
+export function useBoardMembers(boardId: string) {
+  return useQuery({ queryKey: memberKeys.list(boardId), queryFn: () => getBoardMembers(boardId) });
+}
+
+export function useInviteMember(boardId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ email, role }: { email: string; role: "editor" | "viewer" }) =>
+      inviteBoardMember(boardId, email, role),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: memberKeys.list(boardId) });
+      qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) });
+    },
+  });
+}
+
+export function useUpdateMemberRole(boardId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberId, role }: { memberId: string; role: "editor" | "viewer" }) =>
+      updateBoardMemberRole(boardId, memberId, role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: memberKeys.list(boardId) }),
+  });
+}
+
+export function useRemoveMember(boardId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberId }: { memberId: string }) => removeBoardMember(boardId, memberId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: memberKeys.list(boardId) });
+      qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) });
+    },
+  });
+}

@@ -31,7 +31,8 @@ class CardConflictTest extends TestCase
         ]);
 
         $response->assertStatus(409);
-        $response->assertJsonPath('id', $card->id);
+        $response->assertJsonPath('error.code', 'card_conflict');
+        $response->assertJsonPath('error.details.current.id', $card->id);
     }
 
     public function test_matching_base_updated_at_returns_200_and_applies_update(): void

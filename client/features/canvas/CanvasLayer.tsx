@@ -4,6 +4,8 @@ import { useRef, useMemo, useEffect } from "react";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { Card } from "@/lib/api/schemas";
 import { CardShell } from "@/features/cards/CardShell";
+import { useBoardDocContext } from "@/lib/collab/BoardDocContext";
+import { useYDocCards } from "@/lib/collab/useYDocCards";
 
 const VIEWPORT_MARGIN = 200;
 
@@ -28,28 +30,36 @@ export function cullCards(
   );
 }
 
-export function CanvasLayer({ cards, boardId }: Props) {
+export function CanvasLayer({ cards: restCards, boardId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewport = useCanvasStore((s) => s.viewport);
   const localCards = useCanvasStore((s) => s.localCards);
   const marquee = useCanvasStore((s) => s.marquee);
   const upsertLocalCards = useCanvasStore((s) => s.upsertLocalCards);
 
+  const { isCollab, ydoc } = useBoardDocContext();
+  const ydocCards = useYDocCards(ydoc);
+
+  // On shared boards read from Y.Doc; on single-user boards use REST cards + localCards
+  const cards = isCollab ? ydocCards : restCards;
+
   // Seed localCards with server cards so group-drag snapshot has positions for all selected cards.
   // Only adds cards missing from the map — never overwrites optimistic updates.
   useEffect(() => {
+    if (isCollab) return; // Y.Doc is source of truth; no need to seed localCards
     const { localCards: current } = useCanvasStore.getState();
     const unseen = cards.filter((c) => !current.has(c.id));
     if (unseen.length > 0) upsertLocalCards(unseen);
-  }, [cards, upsertLocalCards]);
+  }, [cards, upsertLocalCards, isCollab]);
 
   const merged = useMemo(() => {
+    if (isCollab) return cards; // Y.Doc already has merged state
     const map = new Map(cards.map((c) => [c.id, localCards.get(c.id) ?? c]));
     for (const [id, card] of localCards.entries()) {
       if (!map.has(id)) map.set(id, card);
     }
     return Array.from(map.values());
-  }, [cards, localCards]);
+  }, [cards, localCards, isCollab]);
 
   const visible = useMemo(() => {
     const vw = typeof window !== "undefined" ? window.innerWidth : 1440;

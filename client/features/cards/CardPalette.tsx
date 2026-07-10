@@ -8,6 +8,8 @@ import { Card, CardType } from "@/lib/api/schemas";
 import { uploadCardAttachment } from "@/lib/api/uploadCardAttachment";
 import { canvasCenter } from "@/lib/canvas/coords";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useBoardDocContext } from "@/lib/collab/BoardDocContext";
+import { ydocInsertCard } from "@/lib/collab/ydocMutations";
 
 const PALETTE_ITEMS: { type: CardType; icon: React.ReactNode; label: string }[] = [
   { type: "notebook",  icon: <FileText size={18} />,    label: "Notebook" },
@@ -37,6 +39,7 @@ export function CardPalette({ boardId }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFile = useRef<File | null>(null);
   const prefersReducedMotion = useReducedMotion();
+  const { isCollab, ydoc } = useBoardDocContext();
 
   // H/V keyboard handlers
   useEffect(() => {
@@ -56,13 +59,16 @@ export function CardPalette({ boardId }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, [setMode]);
 
-  function spawnCard(type: CardType) {
+  async function spawnCard(type: CardType) {
     const w = type === "link_list" ? 280 : 320;
     const h = type === "link_list" ? 320 : 200;
     const center = canvasCenter(viewport);
     const x = Math.round(center.x - w / 2);
     const y = Math.round(center.y - h / 2);
-    createCardAsync({ boardId, type, x, y, w, h, z: 10, rotation: 0 });
+
+    // REST-create first (server owns id + created_by), then mirror into the Y.Doc on collab boards.
+    const card = await createCardAsync({ boardId, type, x, y, w, h, z: 10, rotation: 0 });
+    if (isCollab) ydocInsertCard(ydoc, card);
   }
 
   function openFilePicker(accept: string) {
@@ -86,6 +92,7 @@ export function CardPalette({ boardId }: Props) {
     const y = Math.round(center.y - h / 2);
 
     let card: Card;
+    // REST-create first so the attachment has a real cards row to bind to.
     try {
       card = await createCardAsync({
         boardId, type, x, y, w, h, z: 10, rotation: 0,
@@ -99,7 +106,10 @@ export function CardPalette({ boardId }: Props) {
       return;
     }
 
+    // Mirror into the Y.Doc on collab boards so the card renders + syncs to peers.
+    if (isCollab) ydocInsertCard(ydoc, card);
     console.log("[upload] card created, starting attachment upload", card.id, file.name, file.size);
+
     try {
       await uploadCardAttachment({ boardId, card, file, upsertLocalCard, updateCard: (vars) => updateCard(vars) });
     } catch (err) {

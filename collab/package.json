@@ -1,0 +1,22 @@
+{
+  "name": "witsnote-collab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WitsNote real-time collaboration sidecar (Hocuspocus / Yjs).",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@hocuspocus/server": "^2.15.2",
+    "jose": "^6.2.3",
+    "yjs": "^13.6.31"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

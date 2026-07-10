@@ -111,28 +111,65 @@ Done: ✅ Serwist SW (precache + runtime asset caching + `~offline` document fal
 - ✅ **Conflict-free local edits** — chosen path = optimistic query cache + server-side 409 optimistic-concurrency guard (`base_updated_at`) + LWW fallback, *not* CRDT. Reconciles via cache invalidation on conflict.
 - ⬜ **Yjs local doc** — *deferred to Phase 3*. `yjs` dep installed but unused; no `y-indexeddb`, no Y.Doc model. Will land with collab (each board a Y.Doc, cards as `Y.Map`), superseding the 409 guard for collaborative boards.
 
-### Phase 3 — Real-time collaboration ⬜ (not started)
-- ⬜ **`collab/` sidecar** — Node + **Hocuspocus** server; new service + multi-stage Dockerfile + compose entry.
-- ⬜ **Auth bridge** — Hocuspocus `onAuthenticate` validates the Sanctum token against Laravel (`/api/me` or shared secret); authorize per-board via `BoardPolicy` equivalent.
-- ⬜ **Persistence** — `yjs_documents` table (`board_id`, `state` bytea, `updated_at`); Hocuspocus `onStoreDocument`/`onLoadDocument` ↔ Postgres; debounce writes.
-- ⬜ **Presence/awareness** — Redis-backed awareness; render remote cursors + selections on canvas.
-- ⬜ **Sharing model** — `workspaces` + `workspace_members` (roles owner/editor/commenter/viewer); board share links; update policies from owner-only to role-based.
-- ⬜ **Comments** — `comments` table (board/card anchored, threaded) + UI.
-- ⬜ **Vault exclusion** — encrypted notebooks stay single-user (no live collab); guard in sidecar.
-- ⬜ Tests — two-client convergence e2e (Playwright, two contexts editing one board).
+### Phase 3 — Real-time collaboration 🟡 (paused — core working, deferred until Phase 4/5 land)
 
-### Phase 4 — Sketch + search (incl. OCR) ⬜ (search is basic ilike today)
+**Deferred by decision, not by blocker.** Codegraph audit of the uncommitted
+WIP (see "Collab bug-chase" note below) found this phase is far further
+along than previously tracked here — sharing/roles, sidecar, persistence,
+and presence are functional. Resume after Phase 4a + full Phase 5.
+
+- ✅ **`collab/` sidecar** — Node + **Hocuspocus** server, running.
+- ✅ **Auth bridge** — `CollabController::ticket` validates the Sanctum
+  session against Laravel, issues a short-lived ticket per board.
+- ✅ **Persistence** — `BoardDocument` model/migration,
+  `CollabInternalController::show/store`; a `created_by` NOT-NULL/type bug
+  that broke card-create → projection → attachment upload on shared boards
+  (RC1-4 in `LAST_SESSION_PLAN.md`) was found and fixed.
+- ✅ **Sharing model** — `BoardMember`, `BoardPolicy` (owner/editor/viewer),
+  `BoardMemberController`, `ShareModal`, invite/update/remove hooks.
+- ✅ **Presence/awareness** — `PresenceLayer.tsx`, `client/lib/collab/`.
+- ⬜ **Comments** — `comments` table (board/card anchored, threaded) + UI —
+  not started.
+- ⬜ **Vault exclusion** — encrypted notebooks stay single-user (no live
+  collab); guard in sidecar — not yet enforced.
+- ⬜ Tests — only Pest `BoardMemberTest`/`CollabTicketTest` exist; no
+  two-client convergence e2e (Playwright) yet.
+- ⬜ `docker-compose` entry + multi-stage Dockerfile for `collab` service —
+  confirm/add.
+
+### Phase 4a — Sketch + fuzzy search ⬜ (do now — no new infrastructure)
 Sketch:
 - ⬜ **Ink engine** — install `pixi.js` v8 (auto WebGPU→WebGL) + `perfect-freehand`; `SketchCard` / full-board ink layer under DOM cards sharing the viewport transform.
 - ⬜ **Tools** — draw, eraser (stroke hit-test removal), thickness (neumorphic slider), color; store strokes as vector points in `content` (scalable + OCR-able).
 - ⬜ **Perf** — dirty-region redraw, active-stroke overlay then commit; dynamic-import the engine.
 
-Search + OCR:
+Search:
 - ⬜ **Upgrade to fuzzy** — replace `CardController::search` `ilike` with `pg_trgm` similarity + GIN index on `content_text` (extension already enabled); rank by similarity.
+
+### Phase 4b — OCR ⬜ (deferred with Phase 3 — same "new sidecar" risk shape)
 - ⬜ **`ocr/` sidecar** — Python **FastAPI + PaddleOCR**; multi-stage Dockerfile + compose entry; `/ocr` endpoint (image → text + boxes).
 - ⬜ **OCR pipeline** — Laravel queues OCR on sketch/image save (Redis queue) → calls `ocr/` → writes `attachments.ocr_text` / card `content_text`; eventual-consistency status via `aria-live`.
 - ⬜ **Handwritten search** — folded into the same `content_text` index so the existing palette Search tab finds it.
 - ⬜ Tests — OCR integration (sample handwriting → text appears in search).
+
+### Architecture decisions (ADRs) governing Phase 4/5
+
+1. **Reconciliation-model boundary** — Phase 4/5 build exclusively on the
+   existing REST + optimistic-cache + 409 `base_updated_at` guard. No
+   Phase 4/5 feature special-cases Yjs/CRDT semantics; migrating
+   collaborative boards to Y.Doc is Phase-3-resume's problem.
+2. **OCR bucketed with Phase 3** — see Phase 4b above; both are "new
+   service, new auth bridge" work bundled into one future infra-hardening
+   pass rather than landing piecemeal.
+3. **Annotate vs Comments scope split** — Phase 5 "Annotate" ships as
+   position-anchored ink/pins only (`comment_anchor` card type, already in
+   `CardTypeSchema`), no threaded replies. Threaded board/card comments
+   remain Phase 3's deferred "Comments" item.
+
+**Design bar for all new UI in Phase 4/5**: see the Milanote-inspired UX
+strategy (personas, journeys, IA, component inventory, motion/a11y specs)
+recorded in `C:\Users\vince\.claude\plans\ultra-plan-md-goal-defer-iterative-forest.md`
+— extends the existing glass+neumorphism hybrid, doesn't replace it.
 
 ### Phase 5 — Templates, mind-maps, links, vault polish, export ⬜ (vault crypto already done)
 - ✅ **Vault crypto core** — Argon2id + secretbox + verifier + session key (`lib/crypto/notebook.ts`, modals, save path).

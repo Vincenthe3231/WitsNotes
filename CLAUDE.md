@@ -78,3 +78,12 @@ HTTP status preserved (not duplicated in body). Backend routes exceptions via `A
 - `onlineManager` uses DOM events only (`online`/`offline`) — **no polling interval**. Do not add `setInterval` back.
 - Conflict guard: `CardController::update` returns 409 when `base_updated_at` is stale.
 - See `client/lib/api/CLAUDE.md` for offline mutation pattern details.
+
+## Collab sidecar debug
+
+`collab/` (Hocuspocus/Yjs sidecar) has no Telescope-equivalent by default — it's a
+separate Node process, not covered by Laravel's Telescope. Debug inspector at
+`http://localhost:1234/__debug` (dashboard) and `/__debug/events.json` (raw feed)
+shows every hook call (`onAuthenticate`, `onLoadDocument`, `onStoreDocument`,
+`onDisconnect`, `storeYDoc`) with status/duration; events also stream to stdout as
+`[collab:debug]` lines. See `collab/src/inspector.ts` and `collab/README.md`.

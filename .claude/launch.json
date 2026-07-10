@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "client-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "cwd": "client",
+      "port": 3000
+    },
+    {
+      "name": "server-dev",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-d", "upload_max_filesize=50M", "-d", "post_max_size=60M", "artisan", "serve"],
+      "cwd": "server",
+      "port": 8000
+    },
+    {
+      "name": "collab-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "collab",
+      "port": 1235
+    }
+  ]
+}

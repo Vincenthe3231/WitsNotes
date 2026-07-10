@@ -1,5 +1,4 @@
 import { Sidebar } from "@/components/layout/Sidebar";
-import { Topbar } from "@/components/layout/Topbar";
 import { BoardCanvas } from "./BoardCanvas";
 
 interface BoardPageProps {
@@ -13,7 +12,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
     <div className="flex h-full">
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
-        <Topbar title="Board" />
+        {/* Topbar is rendered inside BoardCanvas once board data is loaded (shows title + share button) */}
         <BoardCanvas boardId={id} />
       </div>
     </div>

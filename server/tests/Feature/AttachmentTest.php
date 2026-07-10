@@ -92,7 +92,8 @@ class AttachmentTest extends TestCase
 
         $this->postJson('/api/attachments', ['card_id' => $card->id])
             ->assertStatus(422)
-            ->assertJsonValidationErrors(['file']);
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonStructure(['error' => ['details' => ['file']]]);
     }
 
     public function test_store_accepts_audio_file(): void

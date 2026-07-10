@@ -126,3 +126,24 @@ export async function unfurlUrl(url: string): Promise<{
   const res = await apiClient.get(`/unfurl`, { params: { url } });
   return res.data;
 }
+
+// Board members
+import { BoardMember, BoardMemberSchema } from "./schemas";
+
+export async function getBoardMembers(boardId: string): Promise<BoardMember[]> {
+  const res = await apiClient.get(`/boards/${boardId}/members`);
+  return z.array(BoardMemberSchema).parse(res.data);
+}
+
+export async function inviteBoardMember(boardId: string, email: string, role: "editor" | "viewer"): Promise<BoardMember> {
+  const res = await apiClient.post(`/boards/${boardId}/members`, { email, role });
+  return BoardMemberSchema.parse(res.data);
+}
+
+export async function updateBoardMemberRole(boardId: string, memberId: string, role: "editor" | "viewer"): Promise<void> {
+  await apiClient.patch(`/boards/${boardId}/members/${memberId}`, { role });
+}
+
+export async function removeBoardMember(boardId: string, memberId: string): Promise<void> {
+  await apiClient.delete(`/boards/${boardId}/members/${memberId}`);
+}

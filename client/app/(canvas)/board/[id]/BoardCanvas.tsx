@@ -5,6 +5,7 @@ import { useBoard } from "@/lib/api/hooks";
 import { useCommandStore } from "@/stores/commandStore";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { InfiniteCanvas } from "@/features/canvas/InfiniteCanvas";
+import { Topbar } from "@/components/layout/Topbar";
 
 interface Props {
   boardId: string;
@@ -55,11 +56,14 @@ export function BoardCanvas({ boardId }: Props) {
   }
 
   return (
-    <main
-      className="flex-1 relative overflow-hidden flex"
-      style={{ background: "linear-gradient(135deg, var(--color-canvas-from), var(--color-canvas-to))" }}
-    >
-      <InfiniteCanvas cards={data.cards} boardId={boardId} />
-    </main>
+    <>
+      <Topbar title={data.title} board={data} />
+      <main
+        className="flex-1 relative overflow-hidden flex"
+        style={{ background: "linear-gradient(135deg, var(--color-canvas-from), var(--color-canvas-to))" }}
+      >
+        <InfiniteCanvas cards={data.cards} boardId={boardId} board={data} />
+      </main>
+    </>
   );
 }

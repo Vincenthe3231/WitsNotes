@@ -21,6 +21,8 @@ import { GifCard } from "./GifCard";
 import { AudioCard } from "./AudioCard";
 import { FileCard } from "./FileCard";
 import { uploadCardAttachment } from "@/lib/api/uploadCardAttachment";
+import { useBoardDocContext } from "@/lib/collab/BoardDocContext";
+import { ydocUpdateCard, ydocDeleteCard } from "@/lib/collab/ydocMutations";
 
 type CardRendererProps = { card: Card; boardId: string };
 
@@ -90,6 +92,7 @@ function CardShellInner({ card, boardId }: Props) {
   const { mutate: updateCard } = useUpdateCard();
   const { mutate: deleteCard } = useDeleteCard();
   const confirm = useConfirmStore((s) => s.confirm);
+  const { isCollab, ydoc } = useBoardDocContext();
   const retryInputRef = useRef<HTMLInputElement>(null);
 
   const isSelected = selectedIds.has(card.id);
@@ -106,37 +109,52 @@ function CardShellInner({ card, boardId }: Props) {
     const t = val.trim();
     if (t !== (displayCard.title ?? "")) {
       upsertLocalCard({ ...displayCard, title: t });
-      updateCard({ boardId, id: card.id, input: { title: t } });
+      if (isCollab) {
+        ydocUpdateCard(ydoc, card.id, { title: t });
+      } else {
+        updateCard({ boardId, id: card.id, input: { title: t } });
+      }
     }
   };
 
   const handleMoveEnd = useCallback(
     (x: number, y: number) => {
       upsertLocalCard({ ...displayCard, x, y });
-      updateCard({ boardId, id: card.id, input: { x, y } });
+      if (isCollab) {
+        ydocUpdateCard(ydoc, card.id, { x, y });
+      } else {
+        updateCard({ boardId, id: card.id, input: { x, y } });
+      }
     },
-    [boardId, displayCard, upsertLocalCard, updateCard]
+    [boardId, displayCard, upsertLocalCard, updateCard, isCollab, ydoc, card.id]
   );
 
   const handleResizeEnd = useCallback(
     (x: number, y: number, w: number, h: number) => {
       upsertLocalCard({ ...displayCard, x, y, w, h });
-      updateCard({ boardId, id: card.id, input: { x, y, w, h } });
+      if (isCollab) {
+        ydocUpdateCard(ydoc, card.id, { x, y, w, h });
+      } else {
+        updateCard({ boardId, id: card.id, input: { x, y, w, h } });
+      }
     },
-    [boardId, displayCard, upsertLocalCard, updateCard]
+    [boardId, displayCard, upsertLocalCard, updateCard, isCollab, ydoc, card.id]
   );
 
   const handleGroupMoveEnd = useCallback(
     () => {
-      // localCards already has final positions from live drag — just persist to server
       const { selectedIds: sel, localCards } = useCanvasStore.getState();
       sel.forEach((id) => {
         const c = localCards.get(id);
         if (!c) return;
-        updateCard({ boardId, id, input: { x: c.x, y: c.y } });
+        if (isCollab) {
+          ydocUpdateCard(ydoc, id, { x: c.x, y: c.y });
+        } else {
+          updateCard({ boardId, id, input: { x: c.x, y: c.y } });
+        }
       });
     },
-    [boardId, updateCard]
+    [boardId, updateCard, isCollab, ydoc]
   );
 
   const { onPointerDown: onDragDown, onPointerMove: onDragMove, onPointerUp: onDragUp, onPointerCancel: onDragCancel } =
@@ -274,7 +292,11 @@ function CardShellInner({ card, boardId }: Props) {
               });
               if (confirmed) {
                 removeLocalCard(card.id);
-                deleteCard({ boardId, cardId: card.id });
+                if (isCollab) {
+                  ydocDeleteCard(ydoc, card.id);
+                } else {
+                  deleteCard({ boardId, cardId: card.id });
+                }
               }
             }}
             title="Delete card"

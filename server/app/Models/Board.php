@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Board extends Model
@@ -31,5 +32,24 @@ class Board extends Model
     public function cards(): HasMany
     {
         return $this->hasMany(Card::class);
+    }
+
+    public function document(): HasOne
+    {
+        return $this->hasOne(BoardDocument::class);
+    }
+
+    public function members(): HasMany
+    {
+        return $this->hasMany(BoardMember::class);
+    }
+
+    /** Returns the requesting user's role, or null if not a member (and not owner). */
+    public function memberRole(int $userId): ?string
+    {
+        if ($this->user_id === $userId) {
+            return 'owner';
+        }
+        return $this->members()->where('user_id', $userId)->value('role');
     }
 }

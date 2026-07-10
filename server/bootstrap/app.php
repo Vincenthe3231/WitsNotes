@@ -8,6 +8,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use App\Support\ApiError;
@@ -48,7 +49,21 @@ return Application::configure(basePath: dirname(__DIR__))
             }
         });
 
+        // Laravel's Handler::prepareException() converts AuthorizationException into
+        // Symfony's AccessDeniedHttpException (or HttpException, if it has a status)
+        // before render callbacks run — so the callback must match the converted type,
+        // not the original AuthorizationException.
         $exceptions->render(function (AuthorizationException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiError::render(
+                    'forbidden',
+                    'Forbidden',
+                    403
+                );
+            }
+        });
+
+        $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
             if ($request->is('api/*')) {
                 return ApiError::render(
                     'forbidden',

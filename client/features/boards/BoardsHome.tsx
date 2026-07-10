@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useBoards, useCreateBoard, useDeleteBoard } from "@/lib/api/hooks";
-import { Plus, Trash2, Layout } from "lucide-react";
+import { Plus, Trash2, Layout, Users } from "lucide-react";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 
 export function BoardsHome() {
@@ -82,31 +82,56 @@ export function BoardsHome() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {boards?.map((board) => (
-          <div
-            key={board.id}
-            className="group glass-card relative rounded-2xl p-5 cursor-pointer transition-all duration-150 hover:scale-[1.02]"
-            style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
-            }}
-            onClick={() => router.push(`/board/${board.id}`)}
-          >
-            <h3 className="font-semibold text-base mb-1 truncate" style={{ color: "var(--color-text)" }}>{board.title}</h3>
-            {board.description && (
-              <p className="text-sm truncate" style={{ color: "var(--color-text-muted)" }}>{board.description}</p>
-            )}
-            <button
-              className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg cursor-pointer transition-opacity duration-150"
-              style={{ color: "var(--color-text-muted)" }}
-              onClick={(e) => { e.stopPropagation(); deleteBoard(board.id); }}
-              aria-label="Delete board"
+        {boards?.map((board) => {
+          const isOwner = board.my_role === "owner" || board.my_role == null;
+          const isShared = board.has_members;
+          return (
+            <div
+              key={board.id}
+              className="group glass-card relative rounded-2xl p-5 cursor-pointer transition-all duration-150 hover:scale-[1.02] flex flex-col"
+              style={{
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+              }}
+              onClick={() => router.push(`/board/${board.id}`)}
             >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
+              <div className="flex-1">
+                <h3 className="font-semibold text-base mb-1 truncate" style={{ color: "var(--color-text)" }}>{board.title}</h3>
+                {board.description && (
+                  <p className="text-sm truncate" style={{ color: "var(--color-text-muted)" }}>{board.description}</p>
+                )}
+              </div>
+
+              {/* Footer badges */}
+              <div className="flex items-center gap-2 mt-4 flex-wrap">
+                {isShared && (
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium" style={{ background: "var(--color-primary)", color: "#fff" }}>
+                    <Users size={12} />
+                    <span>Shared</span>
+                  </div>
+                )}
+                {!isOwner && (
+                  <div className="px-2 py-1 rounded-full text-xs font-medium" style={{ background: "var(--color-border)", color: "var(--color-text)" }}>
+                    {board.my_role === "editor" ? "Editor" : "Viewer"}
+                  </div>
+                )}
+              </div>
+
+              {/* Delete button — owner only */}
+              {isOwner && (
+                <button
+                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg cursor-pointer transition-opacity duration-150"
+                  style={{ color: "var(--color-text-muted)" }}
+                  onClick={(e) => { e.stopPropagation(); deleteBoard(board.id); }}
+                  aria-label="Delete board"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
     </div>

@@ -36,8 +36,21 @@ export const BoardSchema = z.object({
   style: z.record(z.string(), z.unknown()).nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  // Collaboration fields (present on GET /boards/:id, optional on list)
+  my_role: z.enum(["owner", "editor", "viewer"]).nullish().transform(v => v ?? null),
+  has_members: z.boolean().optional().transform(v => v ?? false),
 });
 export type Board = z.infer<typeof BoardSchema>;
+
+export const BoardMemberSchema = z.object({
+  id: z.string().uuid().nullable(),
+  user_id: z.number(),
+  name: z.string(),
+  email: z.string().email(),
+  role: z.enum(["owner", "editor", "viewer"]),
+  created_at: z.string(),
+});
+export type BoardMember = z.infer<typeof BoardMemberSchema>;
 
 export const CreateBoardSchema = z.object({
   title: z.string().min(1).max(255),

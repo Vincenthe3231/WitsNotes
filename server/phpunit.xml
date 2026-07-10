@@ -36,5 +36,8 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="ATTACH_IMAGE_DISK" value="public"/>
+        <env name="ATTACH_AUDIO_DISK" value="public"/>
+        <env name="ATTACH_FILE_DISK" value="public"/>
     </php>
 </phpunit>

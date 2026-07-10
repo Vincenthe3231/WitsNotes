@@ -10,8 +10,26 @@ class BoardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $boards = $request->user()->boards()->latest()->get();
-        return response()->json($boards);
+        $userId = $request->user()->id;
+
+        // Own boards
+        $ownBoards = $request->user()->boards()->withCount('members')->latest()->get()
+            ->map(fn($b) => array_merge($b->toArray(), [
+                'my_role'     => 'owner',
+                'has_members' => $b->members_count > 0,
+            ]));
+
+        // Boards shared with user
+        $sharedBoards = \App\Models\BoardMember::where('user_id', $userId)
+            ->with(['board' => fn($q) => $q->withCount('members')])
+            ->get()
+            ->filter(fn($m) => $m->board !== null)
+            ->map(fn($m) => array_merge($m->board->toArray(), [
+                'my_role'     => $m->role,
+                'has_members' => $m->board->members_count > 0,
+            ]));
+
+        return response()->json($ownBoards->concat($sharedBoards)->values());
     }
 
     public function store(Request $request): JsonResponse
@@ -31,7 +49,15 @@ class BoardController extends Controller
     public function show(Request $request, Board $board): JsonResponse
     {
         $this->authorize('view', $board);
-        return response()->json($board->load('cards'));
+
+        $user      = $request->user();
+        $myRole    = $board->memberRole($user->id);
+        $hasMembers = $board->members()->exists();
+
+        return response()->json(array_merge($board->load('cards')->toArray(), [
+            'my_role'     => $myRole,
+            'has_members' => $hasMembers,
+        ]));
     }
 
     public function update(Request $request, Board $board): JsonResponse
