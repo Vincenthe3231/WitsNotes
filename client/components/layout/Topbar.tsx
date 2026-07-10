@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Bell, Moon, Sun, User, Share2, Users, Lock, LockOpen } from "lucide-react";
+import { Search, Bell, Moon, Sun, User, Share2, Users, Lock, LockOpen, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useCommandStore } from "@/stores/commandStore";
 import { useThemeMode } from "@/hooks/useThemeMode";
@@ -73,14 +73,17 @@ interface TopbarProps {
   vaultUnlocked?: boolean;
   onEnableVault?: () => void;
   onLockNow?: () => void;
+  onExportPng?: () => void;
+  onExportPdf?: () => void;
 }
 
-export function Topbar({ title, board, vaultUnlocked, onEnableVault, onLockNow }: TopbarProps) {
+export function Topbar({ title, board, vaultUnlocked, onEnableVault, onLockNow, onExportPng, onExportPdf }: TopbarProps) {
   const { dark, toggle: toggleDark } = useThemeMode();
   const togglePalette = useCommandStore((s) => s.toggle);
   const register = useCommandStore((s) => s.register);
   const unregister = useCommandStore((s) => s.unregister);
   const [showShare, setShowShare] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
     const cmd = {
@@ -157,6 +160,50 @@ export function Topbar({ title, board, vaultUnlocked, onEnableVault, onLockNow }
             <Lock size={14} />
             <span className="hidden sm:inline">Lock now</span>
           </button>
+        )}
+
+        {/* Export menu */}
+        {board && (onExportPng || onExportPdf) && (
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="neu flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-all duration-150"
+              style={{ color: "var(--color-text-muted)" }}
+              aria-label="Export board"
+              aria-expanded={showExportMenu}
+            >
+              <Download size={14} />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+            {showExportMenu && (
+              <div
+                role="menu"
+                className="absolute right-0 mt-1 rounded-xl overflow-hidden"
+                style={{ top: "100%", background: "var(--color-surface-glass)", backdropFilter: "blur(20px)", border: "1px solid var(--color-border)", zIndex: 50, minWidth: 140 }}
+              >
+                {onExportPng && (
+                  <button
+                    role="menuitem"
+                    onClick={() => { setShowExportMenu(false); onExportPng(); }}
+                    className="w-full text-left px-3 py-2 text-sm cursor-pointer transition-colors duration-150"
+                    style={{ color: "var(--color-text)", background: "transparent" }}
+                  >
+                    Export as PNG
+                  </button>
+                )}
+                {onExportPdf && (
+                  <button
+                    role="menuitem"
+                    onClick={() => { setShowExportMenu(false); onExportPdf(); }}
+                    className="w-full text-left px-3 py-2 text-sm cursor-pointer transition-colors duration-150"
+                    style={{ color: "var(--color-text)", background: "transparent" }}
+                  >
+                    Export as PDF
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Share button — owner only */}

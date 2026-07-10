@@ -2,7 +2,9 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, CheckCircle, Loader2, Lock, Unlock, PanelLeft, WifiOff } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2, Lock, Unlock, PanelLeft, WifiOff, FileDown } from "lucide-react";
+import { notebookToMarkdown } from "@/lib/export/markdown";
+import { downloadTextFile } from "@/lib/export/canvasCapture";
 import { useBoard, useUpdateCard } from "@/lib/api/hooks";
 import { NotebookTab } from "@/lib/api/schemas";
 import { NotebookSidebar } from "@/features/notebook/NotebookSidebar";
@@ -299,6 +301,19 @@ export default function NotebookPage({
           </span>
         )}
         {status === "error" && <span className="text-xs text-red-500">Save failed</span>}
+
+        {unlocked && (
+          <button
+            onClick={() => {
+              const md = notebookToMarkdown(card?.title ?? "Notebook", tabs);
+              downloadTextFile(md, `${(card?.title ?? "notebook").replace(/[^\w-]+/g, "-")}.md`);
+            }}
+            style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 12, padding: "4px 8px", borderRadius: 8 }}
+            title="Export as Markdown"
+          >
+            <FileDown size={14} />
+          </button>
+        )}
 
         {unlocked && !isEncrypted && (
           <button

@@ -14,6 +14,8 @@ import {
   deriveKey, generateSalt, makeVerifier, checkVerifier,
   cacheKey, getCachedKey, boardVaultScope, lockAllForBoard,
 } from "@/lib/crypto/notebook";
+import { exportElementAsPng, exportElementAsPdf } from "@/lib/export/canvasCapture";
+import { useToastStore } from "@/stores/toastStore";
 
 const VAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -75,6 +77,20 @@ export function BoardCanvas({ boardId }: Props) {
     setShowSetPassword(false);
   }
 
+  const pushToast = useToastStore((s) => s.push);
+
+  async function exportCanvas(kind: "png" | "pdf") {
+    const el = document.querySelector('[aria-label="Canvas"]') as HTMLElement | null;
+    if (!el) return;
+    try {
+      const filename = `${(data?.title ?? "board").replace(/[^\w-]+/g, "-")}.${kind}`;
+      if (kind === "png") await exportElementAsPng(el, filename);
+      else await exportElementAsPdf(el, filename);
+    } catch {
+      pushToast({ level: "error", message: `Failed to export board as ${kind.toUpperCase()}` });
+    }
+  }
+
   useEffect(() => {
     const cmds = [
       {
@@ -123,6 +139,8 @@ export function BoardCanvas({ boardId }: Props) {
         vaultUnlocked={unlocked}
         onEnableVault={isOwner ? () => setShowSetPassword(true) : undefined}
         onLockNow={isOwner ? lockNow : undefined}
+        onExportPng={!locked ? () => exportCanvas("png") : undefined}
+        onExportPdf={!locked ? () => exportCanvas("pdf") : undefined}
       />
       <main
         className="flex-1 relative overflow-hidden flex"
