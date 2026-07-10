@@ -23,6 +23,7 @@ import { GifCard } from "./GifCard";
 import { AudioCard } from "./AudioCard";
 import { FileCard } from "./FileCard";
 import { SketchCard } from "./SketchCardDynamic";
+import { TableCard } from "./TableCard";
 import { uploadCardAttachment } from "@/lib/api/uploadCardAttachment";
 import { useBoardDocContext } from "@/lib/collab/BoardDocContext";
 import { ydocUpdateCard, ydocDeleteCard } from "@/lib/collab/ydocMutations";
@@ -41,6 +42,7 @@ const CARD_RENDERERS: Partial<Record<CardType, FC<CardRendererProps>>> = {
   audio:     ({ card }) => <AudioCard card={card} />,
   file:      ({ card }) => <FileCard card={card} />,
   sketch:    SketchCard,
+  table:     TableCard,
 };
 
 interface Props {
