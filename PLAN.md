@@ -137,14 +137,15 @@ and presence are functional. Resume after Phase 4a + full Phase 5.
 - ⬜ `docker-compose` entry + multi-stage Dockerfile for `collab` service —
   confirm/add.
 
-### Phase 4a — Sketch + fuzzy search ⬜ (do now — no new infrastructure)
+### Phase 4a — Sketch + fuzzy search ✅ (done — no new infrastructure)
 Sketch:
-- ⬜ **Ink engine** — install `pixi.js` v8 (auto WebGPU→WebGL) + `perfect-freehand`; `SketchCard` / full-board ink layer under DOM cards sharing the viewport transform.
-- ⬜ **Tools** — draw, eraser (stroke hit-test removal), thickness (neumorphic slider), color; store strokes as vector points in `content` (scalable + OCR-able).
-- ⬜ **Perf** — dirty-region redraw, active-stroke overlay then commit; dynamic-import the engine.
+- ✅ **Ink engine** — `pixi.js` v8 + `perfect-freehand`; `SketchCard` (dynamic-imported, ssr:false) shares the viewport transform via its own per-card canvas.
+- ✅ **Tools** — draw, eraser (segment-distance hit-test removal, `lib/canvas/sketch.ts`), thickness, color; strokes stored as vector points in `content.strokes`.
+- ✅ **Perf** — committed layer + live active-stroke overlay, redraw on commit.
+- 🟡 Deviates from spec: per-card canvas, not a single full-board ink layer — simpler, avoids duplicating the viewport-transform sync logic; revisit only if a full-board layer becomes necessary for cross-card ink.
 
 Search:
-- ⬜ **Upgrade to fuzzy** — replace `CardController::search` `ilike` with `pg_trgm` similarity + GIN index on `content_text` (extension already enabled); rank by similarity.
+- ✅ **Upgrade to fuzzy** — `CardController::search` uses `pg_trgm` `%` + `ilike` combined, ranked by `similarity()`; GIN trigram index on `title`/`content_text`.
 
 ### Phase 4b — OCR ⬜ (deferred with Phase 3 — same "new sidecar" risk shape)
 - ⬜ **`ocr/` sidecar** — Python **FastAPI + PaddleOCR**; multi-stage Dockerfile + compose entry; `/ocr` endpoint (image → text + boxes).
@@ -171,17 +172,19 @@ strategy (personas, journeys, IA, component inventory, motion/a11y specs)
 recorded in `C:\Users\vince\.claude\plans\ultra-plan-md-goal-defer-iterative-forest.md`
 — extends the existing glass+neumorphism hybrid, doesn't replace it.
 
-### Phase 5 — Templates, mind-maps, links, vault polish, export ⬜ (vault crypto already done)
+### Phase 5 — Templates, mind-maps, links, vault polish, export ✅ (all 9 items done)
 - ✅ **Vault crypto core** — Argon2id + secretbox + verifier + session key (`lib/crypto/notebook.ts`, modals, save path).
-- ⬜ **Vault reconcile** — unify notebook-card lock with `Board.is_vault` board-level lock; lock/unlock UX from board menu; "lock all" + auto-relock on idle; ensure all vault content paths blank `content_text`.
-- ⬜ **Connections / mind-maps** — `connections` table (`board_id`, `from_card_id`, `to_card_id`, `kind` arrow|line|link, `style`); drag-to-connect UI; render edges on the Pixi layer; optional auto-layout (`elkjs`).
-- ⬜ **Hyperlink between notes** — `card_links` table + in-editor "link to note" + backlinks panel.
-- ⬜ **Templates** — `templates` table (`scope`, `category`, `name`, `preview_url`, `doc` jsonb blueprint) + seeder (storyboard, weekly schedule, project plan, team plan, creative); "use template" clones blueprint into a new board; template gallery UI.
-- ⬜ **Task scheduling / reminders** — `reminders` table; queued job fires Web Push (+ email) at `remind_at`; due/remind badges on cards; calendar/agenda view.
-- ⬜ **Export** — board → PDF (Browsershot/headless) and PNG (client canvas capture); notebook → Markdown.
-- ⬜ **Tables card** — implement `table` card type (BlockNote table or grid); stretch: spreadsheet-style formula cells.
-- ⬜ **Moodboard mode** — image-grid board layout + glass framing.
-- ⬜ **Annotate** — ink/comment overlay pinned to card coordinates (reuse Pixi layer + `comment_anchor` type).
+- ✅ **Vault reconcile** — board-level lock (`BoardController::setVault`, owner-only, blocked when board has members) alongside the existing card-level notebook lock; Topbar "Lock board"/"Lock now"; `lockAllForBoard` clears both the board key and every notebook card's key; auto-relock on 15min idle (`useIdleTimer`).
+- ✅ **Connections / mind-maps** — `connections` table + `ConnectionController`; drag-to-connect handle on selected cards; edges rendered as an SVG overlay (`ConnectionsLayer`) sharing the canvas's viewport-transform wrapper, not a second Pixi instance — simpler, same visual result.
+- ✅ **Hyperlink between notes** — turned out to already be fully built (`@`-mention insertion, `NotebookMention` chip navigation, backlinks panel in `NotebookSidebar`); backfilled the missing test coverage (`flattenTabsForMention`, `findBacklinks`).
+- ✅ **Templates** — `templates` table + `TemplateSeeder` (storyboard, weekly schedule, project plan, team plan, creative moodboard) + `TemplateController::use` clones a blueprint into a new board; `TemplateGalleryModal` ("From template" on Boards Home).
+- ✅ **Task scheduling / reminders** — `reminders` table (dedup by card_id+remind_at) + `reminders:dispatch-due` scheduled command (queues `ReminderMail`); due/remind badge on any card (`lib/dates.ts`); `/tasks` agenda view (the sidebar link was previously a 404). 🟡 Web Push (VAPID + subscription UI + SW push handler) deferred — materially bigger lift than the rest of the feature; email is the "+ email" half shipped.
+- ✅ **Export** — board → PNG/PDF via Topbar "Export" menu (`html-to-image` capture, embedded in a `jsPDF` page); notebook → Markdown (`lib/export/markdown.ts`). 🟡 Deviates from spec: client-side capture, not Browsershot/headless-Chrome — no Chrome binary or `spatie/browsershot` dependency exists in this environment, and that's the same "new external dependency" risk shape flagged for the OCR sidecar.
+- ✅ **Tables card** — `table` card type, simple editable grid (`lib/canvas/table.ts` + `TableCard`), not a full BlockNote table block.
+- ✅ **Moodboard mode** — "Moodboard" Topbar action arranges all cards into a dense uniform grid in one shot (`lib/canvas/moodboard.ts`) — a manual arrange action, not a persistent layout mode, matching Milanote's actual behavior.
+- ✅ **Annotate** — `comment_anchor` card type, a bare 32x32 pin marker (`AnnotatePinCard`) that expands to a single note on click; scoped per ADR #3 (pins only, no threaded replies).
+
+🟡 **Known issue (not fixed, flagged for follow-up):** a content-only card update (payload has no x/y/w/h) sometimes resets the card's position/size to `CreateCardSchema`'s defaults server-side. Seen on both the table and annotate-pin cards during verification; content itself always persisted correctly. Needs investigation in `CardShell.tsx`'s `localCards` merge logic or `CardController::update`.
 
 ---
 
