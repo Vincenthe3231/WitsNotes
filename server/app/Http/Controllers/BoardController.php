@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Board;
+use App\Support\ApiError;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -80,5 +81,38 @@ class BoardController extends Controller
         $this->authorize('delete', $board);
         $board->delete();
         return response()->json(null, 204);
+    }
+
+    /**
+     * Enables board-level vault lock. Client derives the key and computes
+     * salt/verifier itself (server never sees the password or key) — see
+     * client/lib/crypto/notebook.ts. Reconciles the board-level lock
+     * (Board.is_vault/vault_salt/vault_verifier) with the pre-existing
+     * card-level notebook lock (style.encrypted).
+     */
+    public function setVault(Request $request, Board $board): JsonResponse
+    {
+        $this->authorize('manageVault', $board);
+
+        if ($board->members()->exists()) {
+            return ApiError::render(
+                'vault_requires_no_members',
+                'Remove all members before locking this board.',
+                422
+            );
+        }
+
+        $data = $request->validate([
+            'vault_salt'     => ['required', 'string'],
+            'vault_verifier' => ['required', 'string'],
+        ]);
+
+        $board->update([
+            'is_vault'       => true,
+            'vault_salt'     => $data['vault_salt'],
+            'vault_verifier' => $data['vault_verifier'],
+        ]);
+
+        return response()->json($board);
     }
 }

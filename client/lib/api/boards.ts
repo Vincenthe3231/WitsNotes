@@ -147,3 +147,15 @@ export async function updateBoardMemberRole(boardId: string, memberId: string, r
 export async function removeBoardMember(boardId: string, memberId: string): Promise<void> {
   await apiClient.delete(`/boards/${boardId}/members/${memberId}`);
 }
+
+export async function setBoardVault(
+  boardId: string,
+  vaultSalt: string,
+  vaultVerifier: string
+): Promise<Board> {
+  const res = await apiClient.post(`/boards/${boardId}/vault`, {
+    vault_salt: vaultSalt,
+    vault_verifier: vaultVerifier,
+  });
+  return BoardSchema.parse(res.data);
+}

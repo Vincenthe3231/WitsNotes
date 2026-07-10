@@ -33,6 +33,8 @@ export const BoardSchema = z.object({
   title: z.string(),
   description: z.string().nullable(),
   is_vault: z.boolean(),
+  vault_salt: z.string().nullish().transform(v => v ?? null),
+  vault_verifier: z.string().nullish().transform(v => v ?? null),
   style: z.record(z.string(), z.unknown()).nullable(),
   created_at: z.string(),
   updated_at: z.string(),

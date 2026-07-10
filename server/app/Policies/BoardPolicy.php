@@ -29,4 +29,9 @@ class BoardPolicy
     {
         return $board->user_id === $user->id;
     }
+
+    public function manageVault(User $user, Board $board): bool
+    {
+        return $board->user_id === $user->id;
+    }
 }

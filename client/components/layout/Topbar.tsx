@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Bell, Moon, Sun, User, Share2, Users } from "lucide-react";
+import { Search, Bell, Moon, Sun, User, Share2, Users, Lock, LockOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useCommandStore } from "@/stores/commandStore";
 import { useThemeMode } from "@/hooks/useThemeMode";
@@ -70,9 +70,12 @@ function AvatarStack({ boardId }: { boardId: string }) {
 interface TopbarProps {
   title?: string;
   board?: Board | null;
+  vaultUnlocked?: boolean;
+  onEnableVault?: () => void;
+  onLockNow?: () => void;
 }
 
-export function Topbar({ title, board }: TopbarProps) {
+export function Topbar({ title, board, vaultUnlocked, onEnableVault, onLockNow }: TopbarProps) {
   const { dark, toggle: toggleDark } = useThemeMode();
   const togglePalette = useCommandStore((s) => s.toggle);
   const register = useCommandStore((s) => s.register);
@@ -129,6 +132,32 @@ export function Topbar({ title, board }: TopbarProps) {
 
         {/* Collaboration avatar stack */}
         {board?.has_members && <AvatarStack boardId={board.id} />}
+
+        {/* Vault lock controls — owner only, not on shared boards */}
+        {board && isOwner && !board.has_members && !board.is_vault && onEnableVault && (
+          <button
+            onClick={onEnableVault}
+            className="neu flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-all duration-150"
+            style={{ color: "var(--color-text-muted)" }}
+            aria-label="Lock board"
+            title="Set a password to lock this board"
+          >
+            <LockOpen size={14} />
+            <span className="hidden sm:inline">Lock board</span>
+          </button>
+        )}
+        {board && isOwner && board.is_vault && vaultUnlocked && onLockNow && (
+          <button
+            onClick={onLockNow}
+            className="neu flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-all duration-150"
+            style={{ color: "var(--color-primary)" }}
+            aria-label="Lock now"
+            title="Re-lock this board immediately"
+          >
+            <Lock size={14} />
+            <span className="hidden sm:inline">Lock now</span>
+          </button>
+        )}
 
         {/* Share button — owner only */}
         {board && isOwner && (

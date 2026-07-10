@@ -92,3 +92,21 @@ export function getCachedKey(cardId: string): Uint8Array | null {
 export function clearCachedKey(cardId: string): void {
   sessionStorage.removeItem(`vault_key_${cardId}`);
 }
+
+/**
+ * Scope key for a board-level vault (reuses the per-card cache/get/clear
+ * helpers above — they're keyed by an arbitrary string id, not just card ids).
+ */
+export function boardVaultScope(boardId: string): string {
+  return `board:${boardId}`;
+}
+
+/**
+ * "Lock all" — reconciles the board-level lock with the pre-existing
+ * card-level notebook lock: clears the cached board key plus every
+ * encrypted notebook card's cached key, so the whole board re-prompts.
+ */
+export function lockAllForBoard(boardId: string, notebookCardIds: string[]): void {
+  clearCachedKey(boardVaultScope(boardId));
+  notebookCardIds.forEach(clearCachedKey);
+}

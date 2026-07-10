@@ -32,6 +32,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('boards', BoardController::class);
     Route::apiResource('boards.cards', CardController::class)->shallow();
 
+    Route::post('/boards/{board}/vault',            [BoardController::class, 'setVault']);
     Route::get('/boards/{board}/collab-ticket',     [CollabController::class, 'ticket']);
     Route::get('/boards/{board}/members',           [BoardMemberController::class, 'index']);
     Route::post('/boards/{board}/members',          [BoardMemberController::class, 'store']);

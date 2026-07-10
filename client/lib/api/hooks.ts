@@ -228,7 +228,7 @@ export function useUnfurlUrl(url: string) {
 }
 
 // Board members
-import { getBoardMembers, inviteBoardMember, updateBoardMemberRole, removeBoardMember } from "./boards";
+import { getBoardMembers, inviteBoardMember, updateBoardMemberRole, removeBoardMember, setBoardVault } from "./boards";
 import { BoardMember } from "./schemas";
 
 export const memberKeys = {
@@ -267,6 +267,18 @@ export function useRemoveMember(boardId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: memberKeys.list(boardId) });
       qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) });
+    },
+  });
+}
+
+export function useSetBoardVault(boardId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ vaultSalt, vaultVerifier }: { vaultSalt: string; vaultVerifier: string }) =>
+      setBoardVault(boardId, vaultSalt, vaultVerifier),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) });
+      qc.invalidateQueries({ queryKey: boardKeys.all });
     },
   });
 }
