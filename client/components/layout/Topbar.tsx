@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Bell, Moon, Sun, User, Share2, Users, Lock, LockOpen, Download } from "lucide-react";
+import { Search, Bell, Moon, Sun, User, Share2, Users, Lock, LockOpen, Download, LayoutGrid } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useCommandStore } from "@/stores/commandStore";
 import { useThemeMode } from "@/hooks/useThemeMode";
@@ -75,9 +75,10 @@ interface TopbarProps {
   onLockNow?: () => void;
   onExportPng?: () => void;
   onExportPdf?: () => void;
+  onArrangeMoodboard?: () => void;
 }
 
-export function Topbar({ title, board, vaultUnlocked, onEnableVault, onLockNow, onExportPng, onExportPdf }: TopbarProps) {
+export function Topbar({ title, board, vaultUnlocked, onEnableVault, onLockNow, onExportPng, onExportPdf, onArrangeMoodboard }: TopbarProps) {
   const { dark, toggle: toggleDark } = useThemeMode();
   const togglePalette = useCommandStore((s) => s.toggle);
   const register = useCommandStore((s) => s.register);
@@ -204,6 +205,20 @@ export function Topbar({ title, board, vaultUnlocked, onEnableVault, onLockNow, 
               </div>
             )}
           </div>
+        )}
+
+        {/* Moodboard arrange — one-shot dense image-grid layout */}
+        {board && onArrangeMoodboard && (
+          <button
+            onClick={onArrangeMoodboard}
+            className="neu flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-all duration-150"
+            style={{ color: "var(--color-text-muted)" }}
+            aria-label="Arrange as moodboard"
+            title="Arrange all cards into a dense grid"
+          >
+            <LayoutGrid size={14} />
+            <span className="hidden sm:inline">Moodboard</span>
+          </button>
         )}
 
         {/* Share button — owner only */}

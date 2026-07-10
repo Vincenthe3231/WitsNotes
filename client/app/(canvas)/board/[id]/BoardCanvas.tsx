@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useBoard, useSetBoardVault } from "@/lib/api/hooks";
+import { useBoard, useSetBoardVault, useUpdateCard } from "@/lib/api/hooks";
 import { useCommandStore } from "@/stores/commandStore";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
@@ -15,6 +15,7 @@ import {
   cacheKey, getCachedKey, boardVaultScope, lockAllForBoard,
 } from "@/lib/crypto/notebook";
 import { exportElementAsPng, exportElementAsPdf } from "@/lib/export/canvasCapture";
+import { arrangeMoodboardGrid } from "@/lib/canvas/moodboard";
 import { useToastStore } from "@/stores/toastStore";
 
 const VAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
@@ -31,6 +32,7 @@ export function BoardCanvas({ boardId }: Props) {
   const unregister = useCommandStore((s) => s.unregister);
   const setOpen = useCommandStore((s) => s.setOpen);
   const { mutateAsync: setBoardVaultAsync } = useSetBoardVault(boardId);
+  const { mutate: updateCard } = useUpdateCard();
 
   const [showSetPassword, setShowSetPassword] = useState(false);
   // Bumped after any unlock/lock action to force the sessionStorage-derived
@@ -91,6 +93,13 @@ export function BoardCanvas({ boardId }: Props) {
     }
   }
 
+  function arrangeAsMoodboard() {
+    if (!data?.cards.length) return;
+    const positions = arrangeMoodboardGrid(data.cards);
+    positions.forEach(({ id, x, y }) => updateCard({ boardId, id, input: { x, y } }));
+    pushToast({ level: "success", message: "Arranged as moodboard grid", ttl: 2000 });
+  }
+
   useEffect(() => {
     const cmds = [
       {
@@ -141,6 +150,7 @@ export function BoardCanvas({ boardId }: Props) {
         onLockNow={isOwner ? lockNow : undefined}
         onExportPng={!locked ? () => exportCanvas("png") : undefined}
         onExportPdf={!locked ? () => exportCanvas("pdf") : undefined}
+        onArrangeMoodboard={!locked ? arrangeAsMoodboard : undefined}
       />
       <main
         className="flex-1 relative overflow-hidden flex"
