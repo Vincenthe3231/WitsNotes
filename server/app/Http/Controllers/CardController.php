@@ -103,13 +103,25 @@ class CardController extends Controller
         $q     = $request->input('q');
         $limit = (int) $request->input('limit', 20);
 
+        // Fuzzy match via pg_trgm: `%` catches typo/near matches that similarity()
+        // alone would score too low; `ilike` still catches short substrings inside
+        // long content_text that trigram similarity underweights. Rank by the best
+        // of the two similarity scores so close matches surface first.
         $cards = Card::whereHas('board', fn($query) => $query->where('user_id', $request->user()->id))
             ->where(function ($query) use ($q) {
-                $query->where('title', 'ilike', "%{$q}%")
+                $query->whereRaw('title % ?', [$q])
+                      ->orWhereRaw('content_text % ?', [$q])
+                      ->orWhere('title', 'ilike', "%{$q}%")
                       ->orWhere('content_text', 'ilike', "%{$q}%");
             })
+            ->selectRaw(
+                'id, board_id, type, title, content_text, ' .
+                'greatest(similarity(coalesce(title, \'\'), ?), similarity(coalesce(content_text, \'\'), ?)) as rank',
+                [$q, $q]
+            )
+            ->orderByDesc('rank')
             ->limit($limit)
-            ->get(['id', 'board_id', 'type', 'title', 'content_text']);
+            ->get();
 
         return response()->json($cards);
     }

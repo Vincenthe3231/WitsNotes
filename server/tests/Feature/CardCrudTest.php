@@ -96,4 +96,47 @@ class CardCrudTest extends TestCase
             ->assertStatus(200)
             ->assertJsonCount(1);
     }
+
+    public function test_search_matches_typo_via_trigram_similarity(): void
+    {
+        $user  = $this->auth();
+        $board = Board::factory()->create(['user_id' => $user->id]);
+        Card::factory()->create([
+            'board_id'     => $board->id,
+            'created_by'   => $user->id,
+            'title'        => 'Storyboard planning',
+            'content_text' => null,
+        ]);
+
+        // "storyboatd" (transposed letters) should still fuzzy-match "Storyboard"
+        $this->getJson('/api/cards/search?q=storyboatd')
+            ->assertStatus(200)
+            ->assertJsonCount(1);
+    }
+
+    public function test_search_ranks_closer_match_first(): void
+    {
+        $user  = $this->auth();
+        $board = Board::factory()->create(['user_id' => $user->id]);
+        Card::factory()->create([
+            'board_id'     => $board->id,
+            'created_by'   => $user->id,
+            'title'        => 'Weekly planning notes',
+            'content_text' => null,
+        ]);
+        Card::factory()->create([
+            'board_id'     => $board->id,
+            'created_by'   => $user->id,
+            'title'        => 'Planning',
+            'content_text' => null,
+        ]);
+
+        $response = $this->getJson('/api/cards/search?q=Planning')
+            ->assertStatus(200)
+            ->assertJsonCount(2);
+
+        // The card whose title is an exact/closer match to the query should rank first.
+        $titles = array_column($response->json(), 'title');
+        $this->assertSame('Planning', $titles[0]);
+    }
 }
