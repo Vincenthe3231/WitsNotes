@@ -59,6 +59,26 @@ export const CreateBoardSchema = z.object({
   description: z.string().optional(),
   is_vault: z.boolean().optional(),
 });
+
+// Connections (mind-map edges between cards)
+export const ConnectionSchema = z.object({
+  id: z.string().uuid(),
+  board_id: z.string().uuid(),
+  from_card_id: z.string().uuid(),
+  to_card_id: z.string().uuid(),
+  kind: z.enum(["arrow", "line", "link"]),
+  style: z.record(z.string(), z.unknown()).nullish().transform(v => v ?? null),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type Connection = z.infer<typeof ConnectionSchema>;
+
+export const CreateConnectionSchema = z.object({
+  from_card_id: z.string().uuid(),
+  to_card_id: z.string().uuid(),
+  kind: z.enum(["arrow", "line", "link"]).optional(),
+});
+export type CreateConnectionInput = z.infer<typeof CreateConnectionSchema>;
 export type CreateBoardInput = z.infer<typeof CreateBoardSchema>;
 
 // Card

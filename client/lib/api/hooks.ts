@@ -5,8 +5,9 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   createBoard, createCard, deleteBoard, deleteCard,
   getBoard, getBoards, updateBoard, updateCard, searchCards, unfurlUrl,
+  getConnections, createConnection, deleteConnection,
 } from "./boards";
-import { Board, Card, CreateBoardInput, CreateCardInput, UpdateCardInput } from "./schemas";
+import { Board, Card, CreateBoardInput, CreateCardInput, CreateConnectionInput, UpdateCardInput } from "./schemas";
 
 // Boards
 export const boardKeys = {
@@ -280,5 +281,30 @@ export function useSetBoardVault(boardId: string) {
       qc.invalidateQueries({ queryKey: boardKeys.detail(boardId) });
       qc.invalidateQueries({ queryKey: boardKeys.all });
     },
+  });
+}
+
+// Connections (mind-map edges)
+export const connectionKeys = {
+  list: (boardId: string) => ["boards", boardId, "connections"] as const,
+};
+
+export function useConnections(boardId: string) {
+  return useQuery({ queryKey: connectionKeys.list(boardId), queryFn: () => getConnections(boardId) });
+}
+
+export function useCreateConnection(boardId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateConnectionInput) => createConnection(boardId, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: connectionKeys.list(boardId) }),
+  });
+}
+
+export function useDeleteConnection(boardId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (connectionId: string) => deleteConnection(connectionId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: connectionKeys.list(boardId) }),
   });
 }

@@ -4,10 +4,14 @@ import {
   BoardSchema,
   Card,
   CardSchema,
+  Connection,
+  ConnectionSchema,
   CreateBoardInput,
   CreateBoardSchema,
   CreateCardInput,
   CreateCardSchema,
+  CreateConnectionInput,
+  CreateConnectionSchema,
   UpdateCardInput,
   UpdateCardSchema,
 } from "./schemas";
@@ -158,4 +162,22 @@ export async function setBoardVault(
     vault_verifier: vaultVerifier,
   });
   return BoardSchema.parse(res.data);
+}
+
+export async function getConnections(boardId: string): Promise<Connection[]> {
+  const res = await apiClient.get(`/boards/${boardId}/connections`);
+  return z.array(ConnectionSchema).parse(res.data);
+}
+
+export async function createConnection(
+  boardId: string,
+  input: CreateConnectionInput
+): Promise<Connection> {
+  const parsed = CreateConnectionSchema.parse(input);
+  const res = await apiClient.post(`/boards/${boardId}/connections`, parsed);
+  return ConnectionSchema.parse(res.data);
+}
+
+export async function deleteConnection(connectionId: string): Promise<void> {
+  await apiClient.delete(`/connections/${connectionId}`);
 }

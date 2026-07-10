@@ -23,6 +23,10 @@ interface CanvasState {
   localCards: Map<string, Card>;
   marquee: Marquee | null;
   mode: "read" | "edit";
+  /** Card id being dragged from during a drag-to-connect gesture, if any. */
+  connectingFrom: string | null;
+  /** Live cursor position (canvas coords) while drag-to-connect is in progress. */
+  connectingCursor: { x: number; y: number } | null;
 
   setViewport: (vp: Partial<Viewport>) => void;
   panBy: (dx: number, dy: number) => void;
@@ -37,6 +41,9 @@ interface CanvasState {
   setLocalCards: (cards: Card[]) => void;
   setMarquee: (m: Marquee | null) => void;
   setMode: (mode: "read" | "edit") => void;
+  startConnecting: (cardId: string) => void;
+  updateConnectingCursor: (x: number, y: number) => void;
+  endConnecting: () => void;
 }
 
 export const useCanvasStore = create<CanvasState>()((set) => ({
@@ -46,6 +53,8 @@ export const useCanvasStore = create<CanvasState>()((set) => ({
   localCards: new Map(),
   marquee: null,
   mode: "edit",
+  connectingFrom: null,
+  connectingCursor: null,
 
   setViewport: (vp) => set((s) => ({ viewport: { ...s.viewport, ...vp } })),
 
@@ -106,4 +115,8 @@ export const useCanvasStore = create<CanvasState>()((set) => ({
   setMarquee: (m) => set({ marquee: m }),
 
   setMode: (mode) => set({ mode }),
+
+  startConnecting: (cardId) => set({ connectingFrom: cardId, connectingCursor: null }),
+  updateConnectingCursor: (x, y) => set({ connectingCursor: { x, y } }),
+  endConnecting: () => set({ connectingFrom: null, connectingCursor: null }),
 }));

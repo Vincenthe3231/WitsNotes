@@ -7,6 +7,7 @@ use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\CollabController;
 use App\Http\Controllers\CollabInternalController;
 use App\Http\Controllers\BoardMemberController;
+use App\Http\Controllers\ConnectionController;
 use App\Http\Controllers\UnfurlController;
 use App\Http\Middleware\CollabInternalAuth;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +32,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::apiResource('boards', BoardController::class);
     Route::apiResource('boards.cards', CardController::class)->shallow();
+    Route::apiResource('boards.connections', ConnectionController::class)
+        ->shallow()->only(['index', 'store', 'destroy']);
 
     Route::post('/boards/{board}/vault',            [BoardController::class, 'setVault']);
     Route::get('/boards/{board}/collab-ticket',     [CollabController::class, 'ticket']);

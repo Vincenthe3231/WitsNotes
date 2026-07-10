@@ -44,6 +44,11 @@ class Board extends Model
         return $this->hasMany(BoardMember::class);
     }
 
+    public function connections(): HasMany
+    {
+        return $this->hasMany(Connection::class);
+    }
+
     /** Returns the requesting user's role, or null if not a member (and not owner). */
     public function memberRole(int $userId): ?string
     {

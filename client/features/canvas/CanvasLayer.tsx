@@ -4,6 +4,8 @@ import { useRef, useMemo, useEffect } from "react";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { Card } from "@/lib/api/schemas";
 import { CardShell } from "@/features/cards/CardShell";
+import { ConnectionsLayer } from "./ConnectionsLayer";
+import { useConnections } from "@/lib/api/hooks";
 import { useBoardDocContext } from "@/lib/collab/BoardDocContext";
 import { useYDocCards } from "@/lib/collab/useYDocCards";
 
@@ -36,6 +38,9 @@ export function CanvasLayer({ cards: restCards, boardId }: Props) {
   const localCards = useCanvasStore((s) => s.localCards);
   const marquee = useCanvasStore((s) => s.marquee);
   const upsertLocalCards = useCanvasStore((s) => s.upsertLocalCards);
+  const connectingFrom = useCanvasStore((s) => s.connectingFrom);
+  const connectingCursor = useCanvasStore((s) => s.connectingCursor);
+  const { data: connections = [] } = useConnections(boardId);
 
   const { isCollab, ydoc } = useBoardDocContext();
   const ydocCards = useYDocCards(ydoc);
@@ -79,6 +84,13 @@ export function CanvasLayer({ cards: restCards, boardId }: Props) {
           willChange: "transform",
         }}
       >
+        <ConnectionsLayer
+          cards={merged}
+          connections={connections}
+          connectingFrom={connectingFrom}
+          connectingCursor={connectingCursor}
+        />
+
         {visible.map((card) => (
           <CardShell key={card.id} card={card} boardId={boardId} />
         ))}

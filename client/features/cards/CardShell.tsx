@@ -1,13 +1,14 @@
 "use client";
 
 import { memo, useCallback, useState, useRef } from "react";
-import { GripVertical, Trash2, ExternalLink, Lock, RefreshCw } from "lucide-react";
+import { GripVertical, Trash2, ExternalLink, Lock, RefreshCw, Link2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useConfirmStore } from "@/stores/confirmStore";
-import { useUpdateCard, useDeleteCard } from "@/lib/api/hooks";
+import { useUpdateCard, useDeleteCard, useCreateConnection } from "@/lib/api/hooks";
 import { Card, NotebookTab } from "@/lib/api/schemas";
 import { flatten } from "@/lib/notebook/tree";
+import { screenToCanvas } from "@/lib/canvas/coords";
 import { useCardDrag } from "@/features/canvas/useCardDrag";
 import { useCardResize, ResizeHandle } from "@/features/canvas/useCardResize";
 import { FC } from "react";
@@ -93,6 +94,7 @@ function CardShellInner({ card, boardId }: Props) {
   const displayCard = useCanvasStore((s) => s.localCards.get(card.id)) || card;
   const { mutate: updateCard } = useUpdateCard();
   const { mutate: deleteCard } = useDeleteCard();
+  const { mutate: createConnection } = useCreateConnection(boardId);
   const confirm = useConfirmStore((s) => s.confirm);
   const { isCollab, ydoc } = useBoardDocContext();
   const retryInputRef = useRef<HTMLInputElement>(null);
@@ -165,6 +167,32 @@ function CardShellInner({ card, boardId }: Props) {
   const { onPointerDown: onResizeDown, onPointerMove: onResizeMove, onPointerUp: onResizeUp } =
     useCardResize(card, handleResizeEnd);
 
+  function handleConnectStart(e: React.PointerEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    const { startConnecting, updateConnectingCursor, endConnecting } = useCanvasStore.getState();
+    startConnecting(card.id);
+
+    function onMove(ev: PointerEvent) {
+      const vp = useCanvasStore.getState().viewport;
+      const pt = screenToCanvas(ev.clientX, ev.clientY, vp);
+      updateConnectingCursor(pt.x, pt.y);
+    }
+    function onUp(ev: PointerEvent) {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const targetEl = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)
+        ?.closest("[data-card-id]") as HTMLElement | null;
+      const targetId = targetEl?.dataset.cardId;
+      endConnecting();
+      if (targetId && targetId !== card.id) {
+        createConnection({ from_card_id: card.id, to_card_id: targetId });
+      }
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation();
     if (mode === "edit") {
@@ -189,6 +217,7 @@ function CardShellInner({ card, boardId }: Props) {
   return (
     <div
       className="absolute"
+      data-card-id={card.id}
       style={{
         left: displayCard.x,
         top: displayCard.y,
@@ -361,6 +390,35 @@ function CardShellInner({ card, boardId }: Props) {
           onPointerUp={onResizeUp}
         />
       ))}
+
+      {/* Drag-to-connect handle — visible on select/hover only, no permanent clutter */}
+      {isSelected && mode === "edit" && (
+        <div
+          onPointerDown={handleConnectStart}
+          role="button"
+          aria-label={`Connect ${displayTitle} to another card`}
+          title="Drag to connect to another card"
+          className="cursor-pointer"
+          style={{
+            position: "absolute",
+            top: "50%",
+            right: -12,
+            transform: "translateY(-50%)",
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "var(--color-surface-glass)",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.18)",
+            border: "1px solid var(--color-border)",
+            zIndex: 21,
+          }}
+        >
+          <Link2 size={11} style={{ color: "var(--color-primary)" }} />
+        </div>
+      )}
     </div>
   );
 }
