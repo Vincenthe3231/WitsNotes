@@ -1,5 +1,7 @@
 import { apiClient } from "./client";
 import {
+  AgendaItem,
+  AgendaItemSchema,
   Board,
   BoardSchema,
   Card,
@@ -180,4 +182,9 @@ export async function createConnection(
 
 export async function deleteConnection(connectionId: string): Promise<void> {
   await apiClient.delete(`/connections/${connectionId}`);
+}
+
+export async function getAgenda(): Promise<AgendaItem[]> {
+  const res = await apiClient.get("/cards/agenda");
+  return z.array(AgendaItemSchema).parse(res.data);
 }

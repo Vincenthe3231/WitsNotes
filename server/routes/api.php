@@ -28,8 +28,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me',      [AuthController::class, 'me']);
 
-    // Must precede the shallow cards resource so /cards/search isn't bound as /cards/{card}
+    // Must precede the shallow cards resource so /cards/search and /cards/agenda
+    // aren't bound as /cards/{card}
     Route::get('/cards/search', [CardController::class, 'search']);
+    Route::get('/cards/agenda', [CardController::class, 'agenda']);
 
     Route::apiResource('boards', BoardController::class);
     Route::apiResource('boards.cards', CardController::class)->shallow();

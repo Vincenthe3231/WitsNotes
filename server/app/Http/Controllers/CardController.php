@@ -97,6 +97,22 @@ class CardController extends Controller
         return response()->json(null, 204);
     }
 
+    /** Cards with a due/remind date, across every board the user owns or is a member of. */
+    public function agenda(Request $request): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        $cards = Card::whereHas('board', fn($query) => $query
+                ->where('user_id', $userId)
+                ->orWhereHas('members', fn($m) => $m->where('user_id', $userId))
+            )
+            ->where(fn($query) => $query->whereNotNull('due_at')->orWhereNotNull('remind_at'))
+            ->orderByRaw('coalesce(due_at, remind_at) asc')
+            ->get(['id', 'board_id', 'type', 'title', 'due_at', 'remind_at']);
+
+        return response()->json($cards);
+    }
+
     public function search(Request $request): JsonResponse
     {
         $request->validate(['q' => ['required', 'string', 'min:1', 'max:200']]);

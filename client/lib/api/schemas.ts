@@ -161,6 +161,17 @@ export type CreateCardInput = z.infer<typeof CreateCardSchema>;
 export const UpdateCardSchema = CreateCardSchema.partial().omit({ type: true });
 export type UpdateCardInput = z.infer<typeof UpdateCardSchema>;
 
+// Agenda (due/remind items across all boards)
+export const AgendaItemSchema = z.object({
+  id: z.string().uuid(),
+  board_id: z.string().uuid(),
+  type: CardTypeSchema,
+  title: z.string().nullable().optional(),
+  due_at: z.string().nullish().transform(v => v ?? null),
+  remind_at: z.string().nullish().transform(v => v ?? null),
+});
+export type AgendaItem = z.infer<typeof AgendaItemSchema>;
+
 // API Error
 export const ApiErrorSchema = z.object({
   error: z.object({

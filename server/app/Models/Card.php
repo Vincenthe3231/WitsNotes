@@ -55,4 +55,9 @@ class Card extends Model
     {
         return $this->hasMany(Attachment::class);
     }
+
+    public function reminders(): HasMany
+    {
+        return $this->hasMany(Reminder::class);
+    }
 }

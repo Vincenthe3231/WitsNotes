@@ -5,7 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   createBoard, createCard, deleteBoard, deleteCard,
   getBoard, getBoards, updateBoard, updateCard, searchCards, unfurlUrl,
-  getConnections, createConnection, deleteConnection,
+  getConnections, createConnection, deleteConnection, getAgenda,
 } from "./boards";
 import { getTemplates, applyTemplate } from "./templates";
 import { Board, Card, CreateBoardInput, CreateCardInput, CreateConnectionInput, UpdateCardInput } from "./schemas";
@@ -326,4 +326,9 @@ export function useUseTemplate() {
       applyTemplate(templateId, title),
     onSuccess: () => qc.invalidateQueries({ queryKey: boardKeys.all }),
   });
+}
+
+// Agenda
+export function useAgenda() {
+  return useQuery({ queryKey: ["cards", "agenda"], queryFn: getAgenda });
 }

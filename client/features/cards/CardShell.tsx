@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useState, useRef } from "react";
-import { GripVertical, Trash2, ExternalLink, Lock, RefreshCw, Link2 } from "lucide-react";
+import { GripVertical, Trash2, ExternalLink, Lock, RefreshCw, Link2, Clock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useConfirmStore } from "@/stores/confirmStore";
@@ -9,6 +9,7 @@ import { useUpdateCard, useDeleteCard, useCreateConnection } from "@/lib/api/hoo
 import { Card, NotebookTab } from "@/lib/api/schemas";
 import { flatten } from "@/lib/notebook/tree";
 import { screenToCanvas } from "@/lib/canvas/coords";
+import { getReminderBadge } from "@/lib/dates";
 import { useCardDrag } from "@/features/canvas/useCardDrag";
 import { useCardResize, ResizeHandle } from "@/features/canvas/useCardResize";
 import { FC } from "react";
@@ -214,6 +215,8 @@ function CardShellInner({ card, boardId }: Props) {
     ? (displayCard.title ?? "Notebook")
     : (displayCard.title ?? displayCard.type);
 
+  const reminderBadge = getReminderBadge(displayCard);
+
   return (
     <div
       className="absolute"
@@ -294,6 +297,25 @@ function CardShellInner({ card, boardId }: Props) {
 
         {isNotebook && encrypted && (
           <Lock size={11} style={{ color: "var(--color-text-muted)", flexShrink: 0 }} />
+        )}
+        {reminderBadge && (
+          <span
+            title={reminderBadge.overdue ? "Overdue" : "Upcoming"}
+            style={{
+              fontSize: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              padding: "1px 5px",
+              borderRadius: 9,
+              flexShrink: 0,
+              background: reminderBadge.overdue ? "var(--color-danger, #DC2626)" : "var(--color-surface-glass)",
+              color: reminderBadge.overdue ? "#fff" : "var(--color-text-muted)",
+            }}
+          >
+            <Clock size={9} />
+            {reminderBadge.label}
+          </span>
         )}
         {isNotebook && tabs && (
           <span style={{ fontSize: 10, background: "var(--color-primary)", color: "var(--color-primary-fg)", borderRadius: 9, padding: "0 5px", lineHeight: "15px", flexShrink: 0 }}>
