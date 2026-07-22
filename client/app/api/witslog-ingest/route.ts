@@ -17,10 +17,19 @@ import { witslogNextIngest } from "@all-wits/witslog/frameworks/next";
 // which is why every POST here 404'd. Regular non-underscore names route fine.
 //
 // allowedOrigins is the real defense here (see the guardrail rationale in
-// witslog's frameworks/express.js) — kept to this app's own dev origins.
+// witslog's frameworks/express.js). Hardcoding "http://localhost:3000" broke
+// ingest silently (403, swallowed by the browser reporter's best-effort
+// fetch) the moment the app ran on a different port/origin — read from env
+// instead, comma-separated for multiple origins, falling back to the
+// localhost:3000 dev default when unset.
+const allowedOrigins = (process.env.NEXT_PUBLIC_APP_ORIGIN ?? "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const handler = witslogNextIngest({
   application: "witsnote-client",
-  allowedOrigins: ["http://localhost:3000"],
+  allowedOrigins,
 });
 
 export { handler as POST };

@@ -91,8 +91,8 @@ importers:
         version: 5.0.14(@types/react@19.2.17)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
     devDependencies:
       '@all-wits/witslog':
-        specifier: file:../../witslog/bindings/node
-        version: file:../../witslog/bindings/node
+        specifier: ^0.6.0
+        version: 0.6.0
       '@serwist/next':
         specifier: ^9.5.11
         version: 9.5.11(next@16.2.9(@babel/core@7.29.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
@@ -153,8 +153,8 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@all-wits/witslog@file:../../witslog/bindings/node':
-    resolution: {directory: ../../witslog/bindings/node, type: directory}
+  '@all-wits/witslog@0.6.0':
+    resolution: {integrity: sha512-Rj4jHyVcKTqKo8pGVV3pipHvOvl6GR/+U6JeA9Xc5VbDEke6bMCSfPK4dze+3xLCcyoY5T9ybouVWh31ZkD1AQ==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -4034,7 +4034,7 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@all-wits/witslog@file:../../witslog/bindings/node':
+  '@all-wits/witslog@0.6.0':
     dependencies:
       koffi: 2.16.2
 
