@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import WitslogBrowser from "@/lib/witslog-browser";
 import {
   AgendaItem,
   AgendaItemSchema,
@@ -92,6 +93,21 @@ export async function uploadAttachment(
   fd.append("card_id", opts.cardId);
 
   console.log("[upload] uploadAttachment XHR creating", { fileName: file.name, fileSize: file.size, cardId: opts.cardId });
+  // Raw XHR (not axios/fetch, needed for upload-progress events) — network-tab-equivalent
+  // capture wired directly here rather than a new SDK export (single call site today, YAGNI;
+  // promote to a shared helper if a second XHR site appears).
+  const reporter = WitslogBrowser.init({ endpoint: "/api/witslog-ingest", app: "witsnote-client" });
+  const logXhrFailure = (errorCode: string, message: string) => {
+    reporter.enqueue({
+      message,
+      severity: "error",
+      error_code: errorCode,
+      tags: ["network", "xhr", "upload", "witsnote"],
+      context: { cardId: opts.cardId, fileName: file.name, fileSize: file.size },
+    });
+    reporter.flush();
+  };
+
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.withCredentials = true;
@@ -110,13 +126,26 @@ export async function uploadAttachment(
       if (xhr.status === 200 || xhr.status === 201) {
         resolve(JSON.parse(xhr.responseText) as AttachmentResult);
       } else {
+        logXhrFailure(`HTTP_${xhr.status}`, `Upload failed: ${xhr.status} ${xhr.responseText}`);
         reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
       }
     };
 
-    xhr.onerror = (e) => { console.error("[upload] XHR onerror", e); reject(new Error("Upload failed: network error")); };
-    xhr.ontimeout = () => { console.error("[upload] XHR timeout after", xhr.timeout, "ms"); reject(new Error("Upload failed: timeout")); };
-    xhr.onabort = () => { console.error("[upload] XHR aborted"); reject(new Error("Upload failed: aborted")); };
+    xhr.onerror = (e) => {
+      console.error("[upload] XHR onerror", e);
+      logXhrFailure("XHR_NETWORK_ERROR", "Upload failed: network error");
+      reject(new Error("Upload failed: network error"));
+    };
+    xhr.ontimeout = () => {
+      console.error("[upload] XHR timeout after", xhr.timeout, "ms");
+      logXhrFailure("XHR_TIMEOUT", "Upload failed: timeout");
+      reject(new Error("Upload failed: timeout"));
+    };
+    xhr.onabort = () => {
+      console.error("[upload] XHR aborted");
+      logXhrFailure("XHR_ABORTED", "Upload failed: aborted");
+      reject(new Error("Upload failed: aborted"));
+    };
     console.log("[upload] XHR send()");
     xhr.send(fd);
   });

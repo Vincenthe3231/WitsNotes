@@ -6,6 +6,8 @@ import { HocuspocusProvider } from "@hocuspocus/provider";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { fetchCollabTicket } from "./ticket";
 import type { Board } from "@/lib/api/schemas";
+import { witslogWebSocketWatch } from "@/lib/witslog-websocket";
+import WitslogBrowser from "@/lib/witslog-browser";
 
 export type CollabStatus = "disabled" | "connecting" | "connected" | "reconnecting" | "error";
 
@@ -48,6 +50,19 @@ export function useBoardDoc(boardId: string, board?: Board | null): BoardDocStat
 
     idbRef.current = new IndexeddbPersistence(`witsnote-collab-${boardId}`, ydoc);
 
+    // Previously no onClose handler existed at all — a collab-server
+    // disconnect (e.g. the ws://... connection dying) surfaced nothing but
+    // an in-app status change, invisible to witslog. Folded into the
+    // existing `witsnote-client` application via tags, matching how
+    // witsnote-proxy differentiates upstream-4xx/5xx via tags rather than a
+    // separate application name.
+    const reporter = WitslogBrowser.init({ endpoint: "/api/witslog-ingest", app: "witsnote-client" });
+    const wsWatch = witslogWebSocketWatch({
+      report: reporter,
+      tags: ["witsnote"],
+      context: { board: { boardId } },
+    });
+
     const hp = new HocuspocusProvider({
       url: collabUrl,
       name: `board:${boardId}`,
@@ -59,7 +74,17 @@ export function useBoardDoc(boardId: string, board?: Board | null): BoardDocStat
       },
       onAuthenticationFailed() {
         setStatus("error");
+        reporter.enqueue({
+          message: `Collab authentication failed for board ${boardId}`,
+          severity: "error",
+          error_code: "COLLAB_AUTH_FAILED",
+          tags: ["network", "websocket", "witsnote"],
+          context: { board: { boardId } },
+        });
+        reporter.flush();
       },
+      onClose: wsWatch.onClose,
+      onDisconnect: wsWatch.onDisconnect,
     });
 
     providerRef.current = hp;

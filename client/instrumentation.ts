@@ -15,7 +15,16 @@ import {
 } from "@all-wits/witslog/frameworks/next";
 
 export function register() {
-  registerWitslog("witsnote-proxy", { createProject: true });
+  // pid/cwd/argv describe the long-lived Next.js server process itself —
+  // constant-per-process (zero signal) for a server error, and actively
+  // WRONG when this same log() call ends up ingesting a browser-originated
+  // client event (witslogNextIngest runs in this same process). hostname
+  // and git_commit stay on: both are legitimately useful ("which
+  // build/machine ingested this").
+  registerWitslog("witsnote-proxy", {
+    createProject: true,
+    enrich: { pid: false, cwd: false, argv: false },
+  });
 }
 
 export const onRequestError = witslogOnRequestError;

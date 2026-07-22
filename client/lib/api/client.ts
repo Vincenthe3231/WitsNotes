@@ -1,6 +1,8 @@
 import axios from "axios";
 import { ApiErrorSchema } from "./schemas";
 import { ApiError } from "./errors";
+import { witslogAxiosInterceptor } from "@all-wits/witslog/frameworks/axios";
+import WitslogBrowser from "@/lib/witslog-browser";
 
 /**
  * All requests go through /api/proxy/* (Next.js route handler).
@@ -14,19 +16,40 @@ export const apiClient = axios.create({
   withCredentials: true, // send cookies on same-origin requests
 });
 
+// Mints/reuses a correlation id per request (propagated as a header, read by
+// witslogFetch on the proxy side as its own correlation-id fallback — no
+// route.ts change needed) and stamps `correlationId`/`latencyMs` onto the
+// raw axios error. Registered BEFORE the ApiError-normalizing interceptor
+// below so it sees the raw error (with `.config`) — axios runs response
+// interceptors in registration order, so this must come first for the
+// normalizing interceptor to read `err.correlationId`/`err.latencyMs` off
+// the error it receives.
+//
+// Separate reporter instance from providers.tsx's (different queue, same
+// endpoint) — only used for calls explicitly opted into direct capture via
+// `witslogDirectCapture: true` (e.g. client/lib/collab/ticket.ts, which
+// bypasses React Query entirely and so attachWitslog never sees it).
+const directCaptureReporter =
+  typeof window !== "undefined"
+    ? WitslogBrowser.init({ endpoint: "/api/witslog-ingest", app: "witsnote-client" })
+    : undefined;
+witslogAxiosInterceptor(apiClient, { report: directCaptureReporter, tags: ["witsnote"] });
+
 // Response interceptor — normalize errors → ApiError
 apiClient.interceptors.response.use(
   (res) => res,
   async (err) => {
     const status = err.response?.status || 0;
     const data = err.response?.data;
+    const correlationId: string | undefined = err.correlationId;
+    const latencyMs: number | undefined = err.latencyMs;
 
     // Try to parse as ApiErrorSchema
     if (data) {
       const parsed = ApiErrorSchema.safeParse(data);
       if (parsed.success) {
         const { error } = parsed.data;
-        const apiErr = new ApiError(error.code, error.message, status, error.details);
+        const apiErr = new ApiError(error.code, error.message, status, error.details, correlationId, latencyMs);
 
         // Dispatch to toast for non-422 errors (form errors handled inline)
         if (status !== 422) {
@@ -66,7 +89,7 @@ apiClient.interceptors.response.use(
       message = "Network error";
     }
 
-    const apiErr = new ApiError(code, message, status);
+    const apiErr = new ApiError(code, message, status, null, correlationId, latencyMs);
 
     // Dispatch toast for network/synthesized errors
     if (status !== 422) {

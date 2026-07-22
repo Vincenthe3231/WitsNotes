@@ -18,6 +18,7 @@ export interface WitslogEvent {
   exception?: string;
   stacktrace?: string;
   error_code?: string;
+  correlation_id?: string;
   tags?: string[];
   context?: Record<string, unknown>;
 }
@@ -39,6 +40,7 @@ interface IngestBatchEvent {
   exception?: string;
   stacktrace?: string;
   error_code?: string;
+  correlation_id?: string;
   tags?: string[];
   context?: Record<string, unknown>;
 }
@@ -54,6 +56,7 @@ function buildBatch(events: WitslogEvent[], meta: { app: string }) {
         exception: e.exception,
         stacktrace: e.stacktrace,
         error_code: e.error_code,
+        correlation_id: e.correlation_id,
         tags: e.tags,
         context: e.context,
       })
