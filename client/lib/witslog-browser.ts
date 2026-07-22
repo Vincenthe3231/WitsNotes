@@ -10,7 +10,7 @@
 //
 // Used by app/providers.tsx to ship both raw window.onerror/unhandledrejection
 // captures AND frameworks/react-query.js's attachWitslog() events to the
-// server-side ingest endpoint (app/api/__witslog/route.ts).
+// server-side ingest endpoint (app/api/witslog-ingest/route.ts).
 
 export interface WitslogEvent {
   message: string;

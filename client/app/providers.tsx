@@ -44,9 +44,9 @@ function makeQueryClient() {
   // per-mutation onError callbacks above only did optimistic-update
   // rollback and logged nothing; this is the "TanStack Devtools, but
   // persisted to witslog" layer. Browser-only: the reporter posts to
-  // /api/__witslog, which only makes sense client-side.
+  // /api/witslog-ingest, which only makes sense client-side.
   if (typeof window !== "undefined") {
-    const reporter = WitslogBrowser.init({ endpoint: "/api/__witslog", app: "witsnote-client" });
+    const reporter = WitslogBrowser.init({ endpoint: "/api/witslog-ingest", app: "witsnote-client" });
     attachWitslog(qc, { report: reporter, tags: ["witsnote"] });
   }
 
