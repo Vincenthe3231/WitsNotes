@@ -7,6 +7,10 @@
 // `error_code`/`tags` per event, matching the ingest-core.js contract both
 // `witslogBrowserIngest` and `witslogNextIngest` now accept — needed so
 // frameworks/react-query.js's captured error_code/tags survive ingest.
+// Also ported: `captureConsole` (console.error/warn + resource-load capture,
+// added upstream alongside witslog's `@all-wits/witslog/browser` npm
+// subpath) — keep this file in sync with the upstream canonical source when
+// either changes.
 //
 // Used by app/providers.tsx to ship both raw window.onerror/unhandledrejection
 // captures AND frameworks/react-query.js's attachWitslog() events to the
@@ -27,11 +31,25 @@ export interface WitslogBrowserConfig {
   endpoint: string;
   app?: string;
   sampleRate?: number;
+  /**
+   * Also capture `console.error` (severity `error`) / `console.warn`
+   * (severity `warn`) calls — tagged `['console']` — and capture-phase
+   * resource-load failures (`<img>`/`<script>`/`<link>` 404s etc, tagged
+   * `['resource']`), which don't throw and are otherwise invisible to
+   * `window.onerror`/`unhandledrejection`. Default `false` — opt-in because
+   * it patches a global and can be noisy. Enable on at most one
+   * `WitslogBrowser.init(...)` instance per app to avoid double-wrapping
+   * `console.error` (see app/providers.tsx vs lib/api/client.ts).
+   */
+  captureConsole?: boolean;
 }
 
 export interface WitslogReporter {
   flush: () => void;
   enqueue: (event: WitslogEvent) => void;
+  /** Test/cleanup hook — undoes console patching + the capture-phase
+   * resource listener if `captureConsole` was on. */
+  _restoreConsole?: () => void;
 }
 
 interface IngestBatchEvent {
@@ -77,21 +95,43 @@ function makeErrorEvent(message: unknown, opts: Partial<WitslogEvent> = {}): Wit
   };
 }
 
+/** Pure — best-effort stringification of a single console.error/warn arg. */
+function stringifyConsoleArg(arg: unknown): string {
+  if (typeof arg === "string") return arg;
+  if (arg instanceof Error) return arg.message || String(arg);
+  try {
+    return JSON.stringify(arg) ?? String(arg);
+  } catch {
+    return String(arg);
+  }
+}
+
+/** Pure — joins console.error/warn args into one message string. */
+function formatConsoleArgs(args: unknown[]): string {
+  return args.map(stringifyConsoleArg).join(" ");
+}
+
 /**
- * Installs `window.onerror` + `unhandledrejection` handlers that batch
- * events and ship them via `navigator.sendBeacon` (survives page unload)
- * with a `fetch(..., {keepalive:true})` fallback, flushing on
+ * Installs `window.onerror` + `unhandledrejection` handlers (plus, when
+ * enabled, `console.error`/`console.warn` patching and capture-phase
+ * resource-load error capture) that batch events and ship them via
+ * `navigator.sendBeacon` (survives page unload) with a
+ * `fetch(..., {keepalive:true})` fallback, flushing on
  * `visibilitychange`→hidden and `pagehide`. Returns `{flush, enqueue}` —
  * `enqueue` is also what `frameworks/react-query.js`'s `attachWitslog`
  * calls as its `report` sink.
  */
 function init(config: WitslogBrowserConfig): WitslogReporter {
-  const { endpoint, app = "browser", sampleRate = 1 } = config;
+  const { endpoint, app = "browser", sampleRate = 1, captureConsole = false } = config;
   if (!endpoint) {
     throw new TypeError("endpoint is required");
   }
 
   let queue: WitslogEvent[] = [];
+  // Re-entrancy guard: reporting a captured console.error must never itself
+  // call console.error/warn and recurse back into the patched methods —
+  // that would loop forever the moment reporting itself errors.
+  let inReporter = false;
 
   function shouldSample() {
     return sampleRate >= 1 || Math.random() < sampleRate;
@@ -127,10 +167,35 @@ function init(config: WitslogBrowserConfig): WitslogReporter {
   }
 
   function onError(event: ErrorEvent) {
+    // Script errors dispatch directly at Window (event.target === window),
+    // invoking this bubble-registered listener once — unaffected by the
+    // separate capture-phase resource listener below.
     enqueue(
       makeErrorEvent(event.message, {
         stacktrace: event.error && event.error.stack,
         context: { url: event.filename, line: event.lineno, col: event.colno },
+      })
+    );
+  }
+
+  /**
+   * Capture-phase only. Resource-load failures (img/script/link 404s etc.)
+   * dispatch a non-bubbling `error` event targeted at the failed element —
+   * `window`'s bubble-phase listener (`onError` above) never sees it; only a
+   * capture-phase listener on an ancestor (window) observes it as the event
+   * travels down to its target. Script errors are dispatched AT window
+   * (event.target === window) and are already handled by `onError` above —
+   * skip those here so they aren't enqueued twice.
+   */
+  function onResourceError(event: Event) {
+    if (event.target === window) return;
+    const el = event.target as (HTMLElement & { src?: string; href?: string }) | null;
+    if (!el) return;
+    const src = el.src || el.href || "";
+    enqueue(
+      makeErrorEvent("resource load failed", {
+        tags: ["resource"],
+        context: { url: src, tag: el.tagName && el.tagName.toLowerCase() },
       })
     );
   }
@@ -146,6 +211,49 @@ function init(config: WitslogBrowserConfig): WitslogReporter {
     );
   }
 
+  let restoreConsole: (() => void) | null = null;
+
+  function patchConsole(): (() => void) | null {
+    if (typeof console === "undefined") return null;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    if (typeof originalError !== "function" && typeof originalWarn !== "function") return null;
+
+    function wrap(original: typeof console.error, severity: "error" | "warn") {
+      if (typeof original !== "function") return original;
+      return function patched(...args: unknown[]) {
+        // Always call the original first — never swallow developer output,
+        // even if reporting below throws or is skipped by the guard.
+        original.apply(console, args as []);
+        if (inReporter) return;
+        inReporter = true;
+        try {
+          const firstError = args.find((a): a is Error => a instanceof Error);
+          enqueue(
+            makeErrorEvent(formatConsoleArgs(args), {
+              severity,
+              exception: firstError ? firstError.name : undefined,
+              stacktrace: firstError && firstError.stack,
+              tags: ["console"],
+            })
+          );
+        } catch {
+          /* never let capture itself throw into caller's console.error call */
+        } finally {
+          inReporter = false;
+        }
+      };
+    }
+
+    console.error = wrap(originalError, "error") as typeof console.error;
+    console.warn = wrap(originalWarn, "warn") as typeof console.warn;
+
+    return function restore() {
+      console.error = originalError;
+      console.warn = originalWarn;
+    };
+  }
+
   if (typeof window !== "undefined") {
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onRejection);
@@ -155,9 +263,25 @@ function init(config: WitslogBrowserConfig): WitslogReporter {
         if (document.visibilityState === "hidden") flush();
       });
     }
+    if (captureConsole) {
+      restoreConsole = patchConsole();
+      // Resource-load errors (img/script/link) don't bubble — only a
+      // capture-phase listener observes them. Bundled under the same
+      // opt-in as console capture.
+      window.addEventListener("error", onResourceError, true);
+    }
   }
 
-  return { flush, enqueue };
+  return {
+    flush,
+    enqueue,
+    _restoreConsole: () => {
+      if (restoreConsole) restoreConsole();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("error", onResourceError, true);
+      }
+    },
+  };
 }
 
 const WitslogBrowser = { init, buildBatch, makeErrorEvent };

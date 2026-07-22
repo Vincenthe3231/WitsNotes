@@ -46,7 +46,16 @@ function makeQueryClient() {
   // persisted to witslog" layer. Browser-only: the reporter posts to
   // /api/witslog-ingest, which only makes sense client-side.
   if (typeof window !== "undefined") {
-    const reporter = WitslogBrowser.init({ endpoint: "/api/witslog-ingest", app: "witsnote-client" });
+    // captureConsole: true here (not on client.ts's separate directCaptureReporter
+    // instance, to avoid wrapping console.error twice / double-logging) closes the
+    // gap where most DevTools "red" lines — console.error/warn calls that never
+    // throw (React caught-error logs, prop/hydration warnings, third-party libs) —
+    // were invisible to the window.onerror/unhandledrejection-only default.
+    const reporter = WitslogBrowser.init({
+      endpoint: "/api/witslog-ingest",
+      app: "witsnote-client",
+      captureConsole: true,
+    });
     attachWitslog(qc, { report: reporter, tags: ["witsnote"] });
   }
 
