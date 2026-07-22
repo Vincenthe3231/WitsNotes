@@ -3,6 +3,7 @@ allowBuilds:
   core-js: false
   esbuild: true
   kerberos: set this to true or false
+  koffi: true
   sharp: true
   unrs-resolver: true
   workerd: true

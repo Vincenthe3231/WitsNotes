@@ -1,0 +1,8 @@
+[mcp_servers.witslog]
+command = 'C:\Users\vince\AppData\Local\witslog\bin\witslog.exe'
+args = [
+    "serve-mcp",
+    "--stdio",
+    "--db",
+    "client/.witslog/witslog.db",
+]

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\SanitizesUtf8;
 use App\Models\Board;
 use App\Models\Card;
 use App\Support\ApiError;
@@ -10,6 +11,9 @@ use Illuminate\Http\Request;
 
 class CardController extends Controller
 {
+    use SanitizesUtf8;
+
+
     public function index(Board $board): JsonResponse
     {
         $this->authorize('view', $board);
@@ -37,7 +41,7 @@ class CardController extends Controller
         ]);
 
         $card = $board->cards()->create([
-            ...$data,
+            ...$this->sanitizeUtf8($data),
             'created_by' => $request->user()->id,
         ]);
 
@@ -85,7 +89,7 @@ class CardController extends Controller
         }
 
         unset($data['base_updated_at']);
-        $card->update($data);
+        $card->update($this->sanitizeUtf8($data));
 
         return response()->json($card);
     }

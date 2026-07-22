@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\SanitizesUtf8;
 use App\Models\Board;
 use App\Models\BoardDocument;
 use App\Models\Card;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class CollabInternalController extends Controller
 {
+    use SanitizesUtf8;
+
     /**
      * GET /api/internal/boards/{board}/ydoc
      *
@@ -79,7 +82,7 @@ class CollabInternalController extends Controller
 
             // Upsert cards from snapshot
             foreach ($validated['cards'] as $cardData) {
-                $attrs = array_merge($cardData, [
+                $attrs = array_merge($this->sanitizeUtf8($cardData), [
                     'board_id'   => $board->id,
                     'deleted_at' => null,
                 ]);

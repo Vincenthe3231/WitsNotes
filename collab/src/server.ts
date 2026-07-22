@@ -3,6 +3,9 @@ import { jwtVerify } from "jose";
 import * as Y from "yjs";
 import { loadYDoc, storeYDoc, type CardSnapshot } from "./persistence.js";
 import { recordEvent, handleDebugRequest } from "./inspector.js";
+import { ensureWitslog, logException } from "./witslog.js";
+
+ensureWitslog();
 
 const port        = Number(process.env.COLLAB_PORT ?? 1234);
 const jwtSecret   = process.env.COLLAB_JWT_SECRET ?? "";
@@ -36,6 +39,7 @@ function scheduleStore(boardId: string, doc: Y.Doc): void {
     } catch (err) {
       console.error(`[collab] storeYDoc ${boardId} error:`, err);
       recordEvent({ hook: "storeYDoc", documentName: `board:${boardId}`, status: "error", durationMs: Date.now() - start, detail: String(err) });
+      logException(err, { documentName: `board:${boardId}`, hook: "storeYDoc" });
     }
   }, storeDebounceMs));
 }
@@ -100,6 +104,7 @@ const server = Server.configure({
         durationMs: Date.now() - start,
         detail: String(err instanceof Error ? err.message : err),
       });
+      logException(err, { documentName, hook: "onAuthenticate" });
       throw err;
     }
   },
@@ -130,6 +135,7 @@ const server = Server.configure({
     } catch (err) {
       console.error(`[collab] onLoadDocument ${boardId} error:`, err);
       recordEvent({ hook: "onLoadDocument", documentName, status: "error", durationMs: Date.now() - start, detail: String(err) });
+      logException(err, { documentName, hook: "onLoadDocument" });
     }
 
     return document;
@@ -157,6 +163,7 @@ const server = Server.configure({
       } catch (err) {
         console.error(`[collab] flush on disconnect ${boardId} error:`, err);
         recordEvent({ hook: "onDisconnect", documentName, status: "error", durationMs: Date.now() - start, detail: String(err) });
+        logException(err, { documentName, hook: "onDisconnect" });
       }
     } else {
       recordEvent({ hook: "onDisconnect", documentName, status: "ok", detail: `clientsCount=${clientsCount}` });
@@ -168,5 +175,6 @@ server.listen().then(() => {
   console.log(`[collab] Hocuspocus listening on :${port} (health: /health)`);
 }).catch((err: unknown) => {
   console.error("[collab] failed to start", err);
+  logException(err, { hook: "listen" });
   process.exit(1);
 });

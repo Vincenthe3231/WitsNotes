@@ -10,6 +10,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@all-wits/witslog": "^0.4.1",
     "@hocuspocus/server": "^2.15.2",
     "jose": "^6.2.3",
     "yjs": "^13.6.31"
