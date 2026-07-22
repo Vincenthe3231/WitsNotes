@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# witslog local dev DB (binary sqlite + WAL files)
+.witslog/
