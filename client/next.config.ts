@@ -10,6 +10,7 @@ const withSerwist = withSerwistInit({
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: {},
+  serverExternalPackages: ["@all-wits/witslog", "koffi"],
 };
 
 export default withSerwist(nextConfig);

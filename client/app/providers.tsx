@@ -22,6 +22,8 @@ import { Toaster } from "@/components/ui/Toaster";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { idbPersister } from "@/lib/api/persister";
 import { registerMutationDefaults } from "@/lib/api/hooks";
+import { attachWitslog } from "@all-wits/witslog/frameworks/react-query";
+import WitslogBrowser from "@/lib/witslog-browser";
 
 const SEVEN_DAYS = 1000 * 60 * 60 * 24 * 7;
 
@@ -36,6 +38,18 @@ function makeQueryClient() {
     },
   });
   registerMutationDefaults(qc);
+
+  // Auto-capture every failed query/mutation — key, variables, error — with
+  // zero per-hook code. Closes the gap where registerMutationDefaults'
+  // per-mutation onError callbacks above only did optimistic-update
+  // rollback and logged nothing; this is the "TanStack Devtools, but
+  // persisted to witslog" layer. Browser-only: the reporter posts to
+  // /api/__witslog, which only makes sense client-side.
+  if (typeof window !== "undefined") {
+    const reporter = WitslogBrowser.init({ endpoint: "/api/__witslog", app: "witsnote-client" });
+    attachWitslog(qc, { report: reporter, tags: ["witsnote"] });
+  }
+
   return qc;
 }
 

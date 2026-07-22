@@ -157,7 +157,14 @@ export function registerMutationDefaults(qc: QueryClient) {
       ctx: { snapshot: unknown } | undefined
     ) => {
       if (ctx) qc.setQueryData(boardKeys.detail(vars.boardId), ctx.snapshot);
-      const status = (err as { response?: { status?: number } })?.response?.status;
+      // ApiError (lib/api/errors.ts) carries `.status` directly on the error
+      // object, set by client.ts's axios response interceptor — NOT under
+      // `.response.status` (that was an axios-shaped guess left over from
+      // before the interceptor normalized errors). `err.response` doesn't
+      // exist on ApiError, so `status` was always undefined here and this
+      // 409-conflict branch never fired. Found while investigating why the
+      // logged "upstream 409" events had no visible client-side effect.
+      const status = (err as { status?: number })?.status;
       if (status === 409) {
         qc.invalidateQueries({ queryKey: boardKeys.detail(vars.boardId) });
         if (typeof window !== "undefined") {

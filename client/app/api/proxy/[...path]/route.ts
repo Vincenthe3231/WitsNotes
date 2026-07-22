@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { witslogFetch } from "@all-wits/witslog/fetch";
+
+// witslog is mounted once by instrumentation.ts (Next.js's own server-boot
+// hook) — no ensureWitslog()/per-request init needed here anymore.
 
 const UPSTREAM = process.env.API_URL ?? "http://localhost:8000/api";
 
@@ -51,7 +55,19 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ pat
   }
 
   console.log(`[proxy] forwarding ${request.method} ${upstreamUrl}`);
-  const upstream = await fetch(upstreamUrl, fetchInit);
+  // witslogFetch replaces the old hand-written try/catch + witslog.exception
+  // (unreachable upstream) / witslog.error (4xx/5xx) pair that used to live
+  // here — it auto-captures correlation id, latency, cause chain (e.g. the
+  // real ECONNREFUSED/ETIMEDOUT reason behind a bare "fetch failed"), and
+  // the upstream error-response body (previously logged as status-only,
+  // since the body was read further below, after the old log call). Still
+  // throws on network failure exactly like plain `fetch` — the `throw e`
+  // above is gone because witslogFetch does that itself after logging.
+  const upstream = await witslogFetch(upstreamUrl, fetchInit, {
+    application: "witsnote-proxy",
+    tags: ["proxy"],
+    context: { path: apiPath },
+  });
   console.log(`[proxy] upstream responded ${upstream.status} for ${apiPath}`);
 
   const upstreamData = upstream.headers.get("content-type")?.includes("application/json")
