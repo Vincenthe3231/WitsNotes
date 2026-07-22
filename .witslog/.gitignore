@@ -1,0 +1,3 @@
+./witslog.db
+./witslog.db-wal
+./witslog.db-shm
